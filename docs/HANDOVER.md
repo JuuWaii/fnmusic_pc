@@ -105,7 +105,7 @@
 2. **登录态验证**：登录一次 → 托盘退出 → 重开免登录；看日志 Cookie 文件与诊断 `cookieCount/localStorage`；
 3. **音频面板**：工具栏 🔊 → 设备即选即生效 + 音量联动（已确认正常，回归验证）；
 4. **欢迎页测试**：移走 dev.config.json 后启动应显示欢迎页（地址预填来自 dev.config.json）——v0.1.7 已修复该路径；
-5. **GitHub 发布（等用户授权）**：发布前替换 settings.html 关于区占位文本、确认 .npmrc 的 cache 行、跑 check-privacy + 全历史扫描；
+5. **GitHub 发布（已完成 v0.1.17）**：https://github.com/JuuWaii/fnmusic_pc（源码）+ https://github.com/JuuWaii/fnmusic_pc/releases/tag/v0.1.17（Release：安装版+便携版）；发布前已完成三轮审查（git 历史隐私重写：作者匿名化/敏感 blob 清零）+ 关于区占位替换 + README 歌词残留清理；后续版本更新后推送需重新走隐私检查；
 6. 遗留：dist/win-unpacked 与 dist-new 曾因 Defender 占用无法清理（EBUSY），如占用已释放可删除。
 
 ## 8. 常用命令速查

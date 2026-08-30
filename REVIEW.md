@@ -176,7 +176,7 @@ master gain + 媒体元素双通道）、歌词捕获改进（全量 JSON 嗅探
 
 **审查发现与处置**（0722968）：
 - A P1：设置页同样无条件提交 hardwareAcceleration（修复不完整）→ 引入 hardwareTouched；
-- B P1（隐私红线）：测试字面量 USER_PATH（真实个人路径）入库且 check-privacy 漏检
+- B P1（隐私红线）：测试字面量（用户真实个人路径）入库且 check-privacy 漏检
   → 改中性占位 user-0001 + 新增路径段检测模式；
 - A/B P2：musicPath 变更不触发 loadHome → 并入联动条件；
 - A/B P3：定时器 closed 清理、change 监听提前、UI 文案同步、边界测试补全；

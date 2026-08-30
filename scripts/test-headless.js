@@ -275,9 +275,9 @@ console.log('\n[1b] autoLoginSnippet 按钮匹配（审查轮 12：不再误点�
 {
   // 从 window-manager.js 提取 findLoginBtn 的核心匹配逻辑做纯函数验证
   const src = require('fs').readFileSync(path.join(ROOT, 'src/main/window-manager.js'), 'utf8');
-  const m = src.match(/function autoLoginSnippet\(username, password\) \{[\s\S]*?\n  \}/);
+  const m = src.match(/function autoLoginSnippet\(username, password, trustedOrigins\) \{[\s\S]*?\n  \}/);
   assert.ok(m, 'autoLoginSnippet 应存在于 window-manager.js');
-  const code = new Function('username', 'password', m[0] + '\nreturn autoLoginSnippet;')()('u', 'p');
+  const code = new Function('username', 'password', 'trustedOrigins', m[0] + '\nreturn autoLoginSnippet;')()('u', 'p', []);
   // 脚本应包含 submit 优先逻辑（修复点）
   ok('脚本优先匹配 type=submit 登录按钮（防误点「使用 NAS 登录」）', () => {
     assert.ok(code.includes("b.type === 'submit'"), '应优先 type=submit');
@@ -285,6 +285,8 @@ console.log('\n[1b] autoLoginSnippet 按钮匹配（审查轮 12：不再误点�
     assert.ok(code.includes('getClientRects'), '可见性判断应使用 getClientRects');
     assert.ok(code.includes('setInterval'), '应有轮询兜底');
     assert.ok(code.includes('MutationObserver'), '应有 SPA 监听');
+    assert.ok(code.includes('location.origin'), '应有页面侧 origin 校验（审查轮 14）');
+    assert.ok(code.includes('fnos.net'), '应信任 FN Connect 官方代理域');
   });
 }console.log('\n[2] settings');
 {

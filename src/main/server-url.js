@@ -111,6 +111,22 @@ function isConfigured(settings) {
   return Boolean(validateUrl(settings.serverUrl) || validateUrl(settings.remoteUrl));
 }
 
+/**
+ * 已配置服务器地址的 origin 列表（自动登录页面侧校验用，审查轮 14 C P2）
+ * @param {{serverUrl?:string, remoteUrl?:string}} settings
+ * @returns {string[]}
+ */
+function trustedOrigins(settings) {
+  const out = [];
+  for (const u of [settings.serverUrl, settings.remoteUrl]) {
+    try {
+      const origin = new URL(validateUrl(u)).origin;
+      if (origin && !out.includes(origin)) out.push(origin);
+    } catch { /* 忽略非法地址 */ }
+  }
+  return out;
+}
+
 /** 仅用于日志/界面展示的简短主机名（不包含路径） */
 function displayHost(url) {
   if (!url) return '未配置';
@@ -144,4 +160,4 @@ function sanitizeUrl(raw) {
   }
 }
 
-module.exports = { validateUrl, applyMusicPath, resolve, isConfigured, displayHost, sanitizeUrl };
+module.exports = { validateUrl, applyMusicPath, resolve, isConfigured, trustedOrigins, displayHost, sanitizeUrl };

@@ -216,7 +216,7 @@ function createGuestView() {
       if (s.loginUsername && s.loginPasswordSet
         && security.isTrustedOrigin(() => settings.getAll(), frame.url || '')) {
         try {
-          frame.executeJavaScript(autoLoginSnippet(s.loginUsername, settings.getLoginPassword()), true).catch(() => {});
+          frame.executeJavaScript(autoLoginSnippet(s.loginUsername, settings.getLoginPassword(), serverUrl.trustedOrigins(s)), true).catch(() => {});
         } catch { /* 忽略 */ }
       }
     }
@@ -259,14 +259,24 @@ function createGuestView() {
    * - 登录按钮匹配 textContent + aria-label。
    * 仅在页面出现密码输入框时动作；无凭据/无表单则静默退出。
    */
-  function autoLoginSnippet(username, password) {
+  function autoLoginSnippet(username, password, trustedOrigins) {
     const creds = JSON.stringify({ username: String(username || ''), password: String(password || '') });
+    const origins = JSON.stringify(Array.isArray(trustedOrigins) ? trustedOrigins : []);
     return `(() => {
       if (window.__fnmusicAutoLogin) return;
       window.__fnmusicAutoLogin = true;
-      let creds = null;
-      try { creds = ${creds}; } catch (e) { return; }
+      let creds = null, origins = null;
+      try { creds = ${creds}; origins = ${origins}; } catch (e) { return; }
       if (!creds || !creds.username || !creds.password) return;
+      // 审查轮 14 C P2：页面侧 origin 校验——仅当当前页面属于「已配置服务器
+      // origin ∪ FN Connect 官方代理域」时才自动填写，防止用户从信任页导航到
+      // 外站（钓鱼/无关登录表单）时凭据被误填。
+      try {
+        const cur = location.origin;
+        const ok = origins.some((o) => o === cur)
+          || /^https:\/\/(?:[a-z0-9-]+\.)*(?:fnos\.net|5ddd\.com|trzznas\.com)$/i.test(location.host);
+        if (!ok) return;
+      } catch (e) { return; }
       const setVal = (el, v) => {
         const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
         const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
@@ -352,11 +362,14 @@ function createGuestView() {
    * - 主 frame：始终注入——它是「用户配置地址的导航结果」，FN Connect 域名
    *   会 302 到内网 NAS（origin 变化属正常导航链，非第三方内容）；
    * - 子 frame：仍按 security.isTrustedOrigin 过滤——跨域 iframe（广告/第三方
-   *   嵌入）含密码框时不得填入凭据。 */
+   *   嵌入）含密码框时不得填入凭据；
+   * - 页面侧：注入脚本内校验 location.origin ∈ 已配置 origins ∪ FN Connect
+   *   官方代理域（审查轮 14 C P2 收紧）。 */
   function injectAutoLoginIntoFrames() {
     const s = settings.getAll();
     if (!s.loginUsername || !s.loginPasswordSet) return;
-    const script = autoLoginSnippet(s.loginUsername, settings.getLoginPassword());
+    const trusted = serverUrl.trustedOrigins(s);
+    const script = autoLoginSnippet(s.loginUsername, settings.getLoginPassword(), trusted);
     const frames = [];
     try {
       if (wc.mainFrame) {

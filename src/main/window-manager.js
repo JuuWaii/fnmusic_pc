@@ -271,10 +271,12 @@ function createGuestView() {
       // 审查轮 14 C P2：页面侧 origin 校验——仅当当前页面属于「已配置服务器
       // origin ∪ FN Connect 官方代理域」时才自动填写，防止用户从信任页导航到
       // 外站（钓鱼/无关登录表单）时凭据被误填。
+      // 注：模板字符串中正则须用双反斜杠（\\/ 与 \\.），否则经字符串字面量
+      // 解析后反斜杠丢失导致 SyntaxError（v0.1.14 失效根因）。
       try {
         const cur = location.origin;
         const ok = origins.some((o) => o === cur)
-          || /^https:\/\/(?:[a-z0-9-]+\.)*(?:fnos\.net|5ddd\.com|trzznas\.com)$/i.test(location.host);
+          || /^https:\\/\\/(?:[a-z0-9-]+\\.)*(?:fnos\\.net|5ddd\\.com|trzznas\\.com)$/i.test(location.host);
         if (!ok) return;
       } catch (e) { return; }
       const setVal = (el, v) => {

@@ -34,11 +34,15 @@ const LOAD_WATCHDOG_MS = 12000;
 
 /** 主世界注入脚本内容（缓存，避免重复读盘） */
 let mainWorldScript = null;
+/** 注入失败记录（供诊断接口展示，审查轮 A P12；模块级——createGuestView 内声明
+ *  会导致 getInjectFailures 引用越界抛 ReferenceError（审查轮 8 P1 修复）） */
+const injectFailures = [];
 
 let mainWindow = null;
 let guestView = null;           // 懒创建：首次进入 app 模式才创建
 let guestAttached = false;      // guestView 是否已挂到 contentView
 let shellMode = null;           // 'welcome' | 'app'（初始 null：首次 switchShellMode 不短路，必须加载页面）
+let shellLoaded = false;        // 壳页面是否已完成加载（渲染异常判定，审查轮 8 P3）
 let lastIntent = null;          // {url, mode, fallback, triedRemote}
 let watchdogTimer = null;       // 加载看门狗
 let reloadTimer = null;         // 渲染进程崩溃后的延迟重载
@@ -88,11 +92,18 @@ function createMainWindow() {
   mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
 
   // 壳页面渲染生命周期日志（诊断黑屏用）
-  mainWindow.webContents.on('did-start-loading', () => logger.info('壳页面开始加载'));
+  // shellLoaded：壳页面是否已完成加载（审查轮 8 P3 加固——渲染异常判定
+  // 仅在「已加载完成仍不可见」时触发，页面加载慢不再被误判为黑屏）
+  mainWindow.webContents.on('did-start-loading', () => {
+    shellLoaded = false;
+    logger.info('壳页面开始加载');
+  });
   mainWindow.webContents.on('did-finish-load', () => {
+    shellLoaded = true;
     logger.info('壳页面加载完成:', mainWindow.webContents.getURL());
   });
   mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
+    shellLoaded = false;
     logger.error('壳页面加载失败:', code, desc);
   });
   mainWindow.webContents.on('render-process-gone', (_e, details) => {
@@ -133,11 +144,13 @@ function createMainWindow() {
   readyTimer = setTimeout(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (!mainWindow.isVisible()) {
-      // 壳页面仍在加载（冷启动/杀软扫描/慢盘）时不判定渲染异常——审查轮 M2
-      if (mainWindow.webContents.isLoading()) {
-        logger.warn('ready-to-show 超时（10s），壳页面仍在加载，暂不判定渲染异常');
+      // 渲染异常判定（审查轮 M2 + 审查轮 8 P3 加固）：
+      // 仅当壳页面「已加载完成且不在加载中」仍不可见时，才判定为渲染异常并触发自愈；
+      // 页面仍在加载（冷启动/杀软扫描/慢盘）或从未加载成功时不干预，避免误判黑屏。
+      if (!shellLoaded || mainWindow.webContents.isLoading()) {
+        logger.warn('ready-to-show 超时（10s），壳页面尚未加载完成，暂不判定渲染异常');
       } else {
-        logger.warn('ready-to-show 超时（10s），强制显示窗口——疑似渲染异常');
+        logger.warn('ready-to-show 超时（10s），壳页面已加载但未显示——疑似渲染异常');
         // 黑屏自愈：触发渲染异常自动降级（未显式配置时自动切软件渲染）
         if (global.__fnmusicRenderFallback) {
           try { global.__fnmusicRenderFallback(); } catch { /* 忽略 */ }
@@ -199,9 +212,6 @@ function createGuestView() {
       injectIntoFrame(frame);
     }
   });
-
-  /** 注入失败记录（供诊断接口展示，审查轮 A P12） */
-  const injectFailures = [];
 
   /** 向主 frame 及其全部后代 frame 注入主世界脚本（framesInSubtree 覆盖嵌套 iframe） */
   function injectMainWorldIntoFrames() {

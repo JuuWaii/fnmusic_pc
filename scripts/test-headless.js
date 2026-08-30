@@ -376,6 +376,10 @@ console.log('\n[5] window-manager');
   wm.createMainWindow();
   const viewsAfterWelcome = stub._views.length; // 未配置时不应创建 guest 视图
   const shellWc = stub._wins[0] && stub._wins[0].webContents;
+  // 关键：必须在后续 loadHome() 之前抓取快照（否则会被「清空地址」路径的
+  // welcome.html 加载记录污染，回归测试将失去意义——审查轮 8 P1）
+  const welcomeLoadsAtCreate = (shellWc && shellWc._loadCalls || [])
+    .filter((c) => c.startsWith('file:') && c.includes('welcome.html')).length;
   settingsMod.update({ serverUrl: 'http://127.0.0.1:5666', accessMode: 'auto' });
   wm.loadHome();
   const viewsAfterLoadHome = stub._views.length; // 配置后懒创建 1 个
@@ -384,9 +388,8 @@ console.log('\n[5] window-manager');
   });
   ok('未配置 → welcome 模式必须加载欢迎页（黑屏回归：壳页面从不加载）', () => {
     // 回归测试：shellMode 初始值曾为 'welcome'，switchShellMode 短路导致 welcome.html 永不加载
-    const fileCalls = (shellWc && shellWc._loadCalls || []).filter((c) => c.startsWith('file:'));
-    assert.ok(fileCalls.length > 0, '应有 loadFile 调用，实际: ' + JSON.stringify(shellWc && shellWc._loadCalls));
-    assert.ok(fileCalls.some((c) => c.includes('welcome.html')), '应加载 welcome.html');
+    assert.strictEqual(welcomeLoadsAtCreate, 1,
+      'createMainWindow 后应立即加载 welcome.html，实际次数: ' + welcomeLoadsAtCreate);
   });
   ok('loadHome 懒创建 guest 视图', () => {
     assert.strictEqual(viewsAfterLoadHome, 1);
@@ -395,6 +398,11 @@ console.log('\n[5] window-manager');
   wm.loadHome();
   ok('清空地址 → 回到 welcome 模式', () => {
     // 不抛错即可
+  });
+  ok('diagnoseAllFrames 不抛错（getInjectFailures 作用域回归，审查轮 8 P1）', async () => {
+    // 曾因 injectFailures 声明在 createGuestView 函数体内，模块级 getter 访问越界抛 ReferenceError
+    const d = await wm.diagnoseAllFrames();
+    assert.ok(d && Array.isArray(d.frames), '应返回 { frames: [] }');
   });
 }
 

@@ -92,6 +92,11 @@ async function refreshDevices() {
 $('btnRefreshDevices').addEventListener('click', refreshDevices);
 
 /* ---------- 音频诊断 ---------- */
+$('btnOpenLog').addEventListener('click', async () => {
+  const ok2 = await api.openLogDir();
+  if (!ok2) toast('日志目录不可用（请查看控制台输出）', true);
+});
+
 $('btnDiag').addEventListener('click', async () => {
   const pre = $('diagResult');
   pre.classList.remove('hidden');

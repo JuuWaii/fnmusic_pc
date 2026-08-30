@@ -19,10 +19,21 @@ function ensureFile() {
     const d = new Date();
     const pad = (n) => String(n).padStart(2, '0');
     logFile = path.join(logDir, `main-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.log`);
-  } catch {
-    logFile = null; // 写日志失败不致命，静默降级为仅控制台
+    // 验证目录可写（立即写入空串），失败则抛错走兜底
+    fs.writeFileSync(logFile, '', { flag: 'a' });
+  } catch (e) {
+    logFile = null; // 写日志失败：显式报告原因（仅控制台），避免静默丢失诊断信息
+    try {
+      console.error('[logger] 日志初始化失败（诊断信息将仅输出到控制台）:', e && e.message ? e.message : e);
+    } catch { /* 忽略 */ }
   }
   return logFile;
+}
+
+/** 日志目录（供诊断界面展示 / 打开） */
+function getLogDir() {
+  ensureFile();
+  return logDir;
 }
 
 /** @param {string} level @param {string} msg @param {unknown[]} args */
@@ -43,6 +54,7 @@ function write(level, msg, ...args) {
 }
 
 module.exports = {
+  getLogDir,
   info: (msg, ...args) => write('INFO', msg, ...args),
   warn: (msg, ...args) => write('WARN', msg, ...args),
   error: (msg, ...args) => write('ERROR', msg, ...args),

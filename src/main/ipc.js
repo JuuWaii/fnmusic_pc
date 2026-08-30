@@ -229,7 +229,8 @@ function register(ctx) {
   ipcMain.handle('app:diagnose-audio', async (event) => {
     if (!isTrustedShellSender(event)) return null;
     const wc = windowManager.getGuestWebContents();
-    const result = { page: null, logTail: '' };
+    const logDir = logger.getLogDir();
+    const result = { page: null, logTail: '', logDir: logDir || null };
     if (wc && !wc.isDestroyed()) {
       try {
         result.page = await wc.executeJavaScript(
@@ -244,14 +245,26 @@ function register(ctx) {
     }
     // 日志尾部（最近的 setSinkId 结果等）
     try {
-      const logDir = path.join(app.getPath('userData'), 'logs');
-      const files = fs.readdirSync(logDir).filter((f) => f.startsWith('main-')).sort().reverse();
-      if (files.length) {
-        const lines = fs.readFileSync(path.join(logDir, files[0]), 'utf8').split(/\r?\n/).filter(Boolean);
-        result.logTail = lines.slice(-40).join('\n');
+      if (logDir && fs.existsSync(logDir)) {
+        const files = fs.readdirSync(logDir).filter((f) => f.startsWith('main-')).sort().reverse();
+        result.logFiles = files;
+        if (files.length) {
+          const lines = fs.readFileSync(path.join(logDir, files[0]), 'utf8').split(/\r?\n/).filter(Boolean);
+          result.logTail = lines.slice(-40).join('\n');
+        }
       }
     } catch { /* 无日志时忽略 */ }
     return result;
+  });
+
+  /* ---------- 打开日志目录（资源管理器） ---------- */
+  ipcMain.handle('app:open-log-dir', (event) => {
+    if (!isTrustedShellSender(event)) return false;
+    const dir = logger.getLogDir();
+    if (!dir) return false;
+    const { shell } = require('electron');
+    shell.openPath(dir).catch(() => {});
+    return true;
   });
 
   /* ---------- 关于 ---------- */

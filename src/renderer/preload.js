@@ -34,6 +34,7 @@ const api = {
   /* ---- 关于 / 诊断 ---- */
   getAppInfo: () => ipcRenderer.invoke('app:info'),
   diagnoseAudio: () => ipcRenderer.invoke('app:diagnose-audio'),
+  openLogDir: () => ipcRenderer.invoke('app:open-log-dir'),
 
   /* ---- 窗口 ---- */
   openSettings: (welcome) => ipcRenderer.send('settings:open', Boolean(welcome)),

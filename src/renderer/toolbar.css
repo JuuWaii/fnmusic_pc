@@ -1,0 +1,78 @@
+/* 工具栏样式：深色细长顶栏，与网页内容视觉分离 */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { height: 100%; overflow: hidden; background: #1f2329; }
+
+#bar {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 8px;
+  /* 右侧预留系统窗口按钮区域（最小化/最大化/关闭） */
+  padding-right: 150px;
+  background: #1f2329;
+  -webkit-app-region: drag; /* 整条可拖动窗口 */
+  user-select: none;
+}
+
+.group { display: flex; align-items: center; gap: 4px; -webkit-app-region: no-drag; }
+
+.tool {
+  width: 32px; height: 30px;
+  border: none; border-radius: 6px;
+  background: transparent; color: #c8ccd4;
+  font-size: 15px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.tool:hover { background: #2f3540; color: #ffffff; }
+.tool:disabled { color: #5a6270; cursor: default; }
+.tool.active { background: #3b82f6; color: #fff; }
+
+.urlpill {
+  flex: 0 1 auto;
+  min-width: 120px; max-width: 420px;
+  margin-left: 12px;
+  display: flex; align-items: center; gap: 8px;
+  height: 30px; padding: 0 12px;
+  background: #262c36; border-radius: 15px;
+  color: #9aa3b2; font-size: 12px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  white-space: nowrap; overflow: hidden;
+}
+.urlpill:hover { background: #2f3540; }
+#urlText { overflow: hidden; text-overflow: ellipsis; }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dot-ok { background: #34d399; }
+.dot-err { background: #f87171; }
+.dot-unknown { background: #6b7280; }
+.dot-loading { background: #fbbf24; }
+
+.spacer { flex: 1; }
+
+/* 设备下拉菜单 */
+.device-menu {
+  position: fixed;
+  top: 48px; right: 160px;
+  width: 340px;
+  background: #262c36;
+  border: 1px solid #3a414d;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  padding: 10px;
+  z-index: 100;
+}
+.device-menu-title { color: #e8e8e8; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.device-list { max-height: 260px; overflow-y: auto; }
+.device-item {
+  display: block; width: 100%; text-align: left;
+  padding: 8px 10px; margin-bottom: 2px;
+  background: transparent; border: none; border-radius: 6px;
+  color: #c8ccd4; font-size: 13px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.device-item:hover { background: #2f3540; }
+.device-item.selected { background: #3b82f6; color: #fff; }
+.device-menu-note { color: #7c8698; font-size: 11px; margin-top: 8px; line-height: 1.5; }
+.hidden { display: none !important; }

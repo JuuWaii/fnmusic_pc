@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self';" />
+<title>欢迎 - FN Music PC</title>
+<link rel="stylesheet" href="welcome.css" />
+</head>
+<body>
+  <div class="card">
+    <div class="logo">&#9835;</div>
+    <h1>FN Music PC</h1>
+    <p class="sub">飞牛音乐网页的 PC 客户端</p>
+
+    <div class="intro">
+      <p>欢迎使用！请填写你的飞牛音乐服务器地址，即可开始聆听。</p>
+      <ul>
+        <li><b>本地地址</b>：局域网内 NAS 的飞牛音乐网页入口，例如 <code>http://192.168.x.x:5666</code></li>
+        <li><b>FN Connect 远程地址</b>：飞牛官方远程访问服务分配的域名（<code>https://…</code>），
+            用于在外网访问，格式见飞牛系统「FN Connect」页面（官方域名后缀如 fnos.net）。</li>
+      </ul>
+    </div>
+
+    <div class="form">
+      <label for="serverUrl">飞牛音乐本地地址</label>
+      <input id="serverUrl" type="text" placeholder="http://127.0.0.1:5666" spellcheck="false" />
+
+      <label for="remoteUrl">FN Connect 远程地址（可选）</label>
+      <input id="remoteUrl" type="text" placeholder="https://你的远程域名" spellcheck="false" />
+
+      <label for="accessMode">访问模式</label>
+      <select id="accessMode">
+        <option value="auto">自动：优先本地，失败自动切换远程</option>
+        <option value="local">仅本地地址</option>
+        <option value="remote">仅远程地址</option>
+      </select>
+
+      <div class="actions">
+        <button id="btnTest" class="ghost">测试连接</button>
+        <button id="btnStart" class="primary">保存并开始使用</button>
+      </div>
+      <div id="testResult" class="test-result"></div>
+    </div>
+
+    <p class="foot">登录信息（Cookie 等）仅保存在本机，重启无需重复登录。本客户端不收集任何数据。</p>
+  </div>
+  <script src="welcome.js"></script>
+</body>
+</html>

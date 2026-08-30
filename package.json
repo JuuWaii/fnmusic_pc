@@ -1,0 +1,22 @@
+{
+  "name": "fnmusic-pc",
+  "version": "0.1.0",
+  "description": "飞牛音乐（fnOS Music）网页的 PC 客户端：网页嵌套播放，保留登录态，支持 FN Connect 远程访问与音频输出设备选择",
+  "main": "src/main/main.js",
+  "author": "fnmusic-pc contributors",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --smoke-test",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "check:privacy": "node scripts/check-privacy.js",
+    "test": "node scripts/test-headless.js",
+    "download:electron": "node scripts/electron-download.js"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^26.15.3"
+  }
+}

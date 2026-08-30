@@ -1,0 +1,43 @@
+# electron-builder 打包配置（Windows）
+# 用法：
+#   npm run pack   # 仅生成未安装的目录包（快速验证）
+#   npm run dist   # 生成 NSIS 安装包与便携版（win.target 定义）
+appId: com.fnmusic.pc
+productName: FNMusicPC
+copyright: Copyright (c) 2025 fnmusic-pc contributors
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - src/**/*
+  - package.json
+  - LICENSE
+  - README.md
+  - THIRD_PARTY_NOTICES.md
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: build/icon.png
+
+nsis:
+  oneClick: false            # 向导式安装（可选择安装目录）
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: FNMusicPC
+
+# 国内网络可设置镜像加速 Electron 下载：
+#   $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+# 本项目无原生依赖，跳过 node_modules 重建（受限环境/CI 友好）
+npmRebuild: false

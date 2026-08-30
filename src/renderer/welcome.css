@@ -1,0 +1,49 @@
+/* 欢迎页样式 */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(135deg, #14181f 0%, #1f2733 55%, #26303f 100%);
+  color: #e8eaed;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh;
+}
+.card {
+  width: 560px;
+  background: rgba(30, 36, 46, 0.92);
+  border: 1px solid #333c4a;
+  border-radius: 16px;
+  padding: 40px 44px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.45);
+}
+.logo {
+  font-size: 52px; text-align: center; color: #60a5fa;
+  text-shadow: 0 4px 18px rgba(96,165,250,.35);
+}
+h1 { text-align: center; font-size: 26px; margin-top: 8px; }
+.sub { text-align: center; color: #8a94a6; font-size: 13px; margin-top: 4px; }
+.intro { margin-top: 20px; font-size: 13px; color: #b6becb; line-height: 1.7; }
+.intro ul { margin: 10px 0 0 18px; }
+.intro li { margin-bottom: 6px; }
+.intro code { background: #262d3a; padding: 1px 6px; border-radius: 4px; font-size: 12px; color: #93c5fd; }
+.form { margin-top: 22px; }
+.form label { display: block; font-size: 12px; color: #8a94a6; margin: 12px 0 6px; }
+.form input, .form select {
+  width: 100%; height: 38px;
+  background: #14181f; color: #e8eaed;
+  border: 1px solid #3a4454; border-radius: 8px;
+  padding: 0 12px; font-size: 13px; outline: none;
+}
+.form input:focus, .form select:focus { border-color: #60a5fa; }
+.actions { display: flex; gap: 10px; margin-top: 22px; }
+button {
+  height: 38px; padding: 0 18px; border-radius: 8px;
+  font-size: 13px; cursor: pointer; border: none;
+}
+.primary { background: #3b82f6; color: #fff; flex: 1; }
+.primary:hover { background: #2f74e8; }
+.ghost { background: transparent; color: #c8ccd4; border: 1px solid #3a4454; }
+.ghost:hover { background: #262d3a; }
+.test-result { margin-top: 12px; font-size: 12px; min-height: 18px; }
+.test-result.ok { color: #34d399; }
+.test-result.err { color: #f87171; }
+.foot { margin-top: 24px; font-size: 11px; color: #6b7688; line-height: 1.6; }

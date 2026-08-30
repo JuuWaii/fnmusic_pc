@@ -1,0 +1,50 @@
+/* 设置页样式 */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: #f5f6f8; color: #24292f;
+}
+.wrap { max-width: 640px; margin: 0 auto; padding: 28px 24px 60px; }
+header h1 { font-size: 24px; }
+header .sub { color: #6b7688; font-size: 13px; margin-top: 4px; }
+section {
+  background: #fff; border: 1px solid #e4e7eb; border-radius: 12px;
+  padding: 18px 20px; margin-top: 16px;
+}
+section h2 { font-size: 15px; margin-bottom: 12px; color: #1f2329; }
+.tag { font-size: 11px; background: #eef2ff; color: #4f63d2; padding: 2px 8px; border-radius: 10px; }
+label { display: block; font-size: 12px; color: #57606a; margin: 10px 0 5px; }
+input[type="text"], select {
+  width: 100%; height: 36px;
+  border: 1px solid #d0d7de; border-radius: 8px;
+  padding: 0 10px; font-size: 13px; background: #fafbfc; outline: none;
+}
+input[type="text"]:focus, select:focus { border-color: #3b82f6; background: #fff; }
+.hint { font-size: 11px; color: #8a94a6; margin-top: 6px; line-height: 1.6; }
+.hint.warn { color: #b45309; }
+.hint a { color: #3b82f6; text-decoration: none; }
+.row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.row .grow { flex: 1; }
+.switch-label { display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer; font-size: 13px; color: #24292f; }
+input[type="range"] { width: 100%; margin-top: 8px; }
+button {
+  height: 34px; padding: 0 16px; border-radius: 8px;
+  border: none; font-size: 13px; cursor: pointer;
+}
+.primary { background: #3b82f6; color: #fff; }
+.primary:hover { background: #2f74e8; }
+.ghost { background: #fff; color: #24292f; border: 1px solid #d0d7de; }
+.ghost:hover { background: #f3f4f6; }
+.danger { background: #fff; color: #dc2626; border: 1px solid #f3c1c1; }
+.danger:hover { background: #fef2f2; }
+#testResult { font-size: 12px; }
+#testResult.ok { color: #16a34a; }
+#testResult.err { color: #dc2626; }
+.about { font-size: 12px; color: #57606a; line-height: 1.8; background: #f6f8fa; border-radius: 8px; padding: 10px 12px; }
+footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #1f2329; color: #fff; font-size: 13px;
+  padding: 10px 20px; border-radius: 20px; box-shadow: 0 6px 20px rgba(0,0,0,.3);
+}
+.toast.err { background: #b91c1c; }

@@ -1,0 +1,5 @@
+{
+  "_comment": "开发期配置模板：复制为 dev.config.json 并填写你的真实服务器地址。dev.config.json 已被 .gitignore 排除，不会提交到 git，防止内网地址等个人信息泄漏。",
+  "serverUrl": "http://127.0.0.1:5666",
+  "remoteUrl": ""
+}

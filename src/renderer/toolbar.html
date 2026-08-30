@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self';" />
+<title>FN Music PC - 工具栏</title>
+<link rel="stylesheet" href="toolbar.css" />
+</head>
+<body>
+  <!-- 顶栏：整条为可拖动区域（窗口无原生标题栏），按钮区域除外 -->
+  <div id="bar">
+    <div class="group nav-group">
+      <button id="btnBack" class="tool" title="后退 (Alt+Left)">&#8592;</button>
+      <button id="btnForward" class="tool" title="前进 (Alt+Right)">&#8594;</button>
+      <button id="btnReload" class="tool" title="重新加载 (Ctrl+R)">&#10227;</button>
+      <button id="btnHome" class="tool" title="主页">&#8962;</button>
+    </div>
+
+    <div id="urlPill" class="urlpill" title="当前服务器地址（点击打开设置修改）">
+      <span id="statusDot" class="dot dot-unknown"></span>
+      <span id="urlText">未连接</span>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="group">
+      <button id="btnLyrics" class="tool" title="桌面歌词（可选功能）">&#9835;</button>
+      <button id="btnDevice" class="tool" title="音频输出设备（在设置中选择）">&#128266;</button>
+      <button id="btnSettings" class="tool" title="设置 (Ctrl+,)">&#9881;</button>
+    </div>
+  </div>
+
+  <script src="toolbar.js"></script>
+</body>
+</html>

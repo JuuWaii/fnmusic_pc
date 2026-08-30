@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self';" />
+<title>设置 - FN Music PC</title>
+<link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1 id="pageTitle">设置</h1>
+      <p class="sub" id="pageSub">FN Music PC · 配置飞牛音乐服务器与个性化选项</p>
+    </header>
+
+    <!-- 服务器配置（需求 3：欢迎页/设置均可修改） -->
+    <section>
+      <h2>服务器</h2>
+      <label for="serverUrl">飞牛音乐本地地址</label>
+      <input id="serverUrl" type="text" placeholder="http://192.168.x.x:5666" spellcheck="false" />
+      <p class="hint">局域网内飞牛音乐网页入口（飞牛 OS 音乐应用，通常端口 5666）。</p>
+
+      <label for="remoteUrl">FN Connect 远程地址（可选）</label>
+      <input id="remoteUrl" type="text" placeholder="https://你的远程域名" spellcheck="false" />
+      <p class="hint">
+        飞牛官方远程访问服务分配的网页访问地址，用于外网听歌。
+        请在飞牛系统「FN Connect」中获取（官方代理域名后缀如 fnos.net，详见
+        <a href="https://help.fnnas.com/articles/v1/access/how-access" target="_blank" rel="noopener">官方文档</a>）。
+      </p>
+
+      <label for="accessMode">访问模式</label>
+      <select id="accessMode">
+        <option value="auto">自动：优先本地，失败自动切换远程（推荐）</option>
+        <option value="local">仅本地地址</option>
+        <option value="remote">仅远程地址</option>
+      </select>
+
+      <div class="row">
+        <button id="btnTest" class="ghost">测试连接</button>
+        <span id="testResult"></span>
+      </div>
+    </section>
+
+    <!-- 音频输出设备（需求 4） -->
+    <section>
+      <h2>音频输出设备</h2>
+      <div class="row">
+        <select id="deviceSelect" class="grow">
+          <option value="">系统默认设备（跟随系统设置）</option>
+        </select>
+        <button id="btnRefreshDevices" class="ghost">刷新</button>
+      </div>
+      <p class="hint">
+        选择后立即生效：客户端会在网页播放器创建音频时自动将声音定向到所选设备。
+        若列表为空，请确认已进入飞牛音乐页面（设备枚举依赖页面环境）。
+      </p>
+    </section>
+
+    <!-- 桌面歌词（需求 6，可选） -->
+    <section>
+      <h2>桌面歌词 <span class="tag">可选</span></h2>
+      <div class="row">
+        <label class="switch-label">
+          <input type="checkbox" id="lyricsEnabled" />
+          <span>开启桌面歌词悬浮窗</span>
+        </label>
+      </div>
+      <label for="lyricsOpacity">窗口不透明度：<span id="opacityValue">0.9</span></label>
+      <input type="range" id="lyricsOpacity" min="0.3" max="1" step="0.05" />
+      <p class="hint">
+        歌词来自飞牛音乐网页自身的接口数据（仅本地解析，不对外传输）。
+        若当前歌曲无歌词，悬浮窗会显示提示。可拖动悬浮窗到任意位置。
+      </p>
+    </section>
+
+    <!-- 高级 -->
+    <section id="sectionAdvanced">
+      <h2>高级</h2>
+      <div class="row">
+        <label class="switch-label">
+          <input type="checkbox" id="ignoreCertErrors" />
+          <span>忽略证书错误（FN Connect 隧道异常时使用）</span>
+        </label>
+      </div>
+      <p class="hint warn">仅在远程访问出现证书问题时临时开启，普通局域网无需开启。</p>
+      <div class="row">
+        <button id="btnClearData" class="danger">清除登录数据（Cookie / 缓存）</button>
+      </div>
+      <p class="hint">清除后需重新登录飞牛账号；本客户端自身设置不受影响。</p>
+    </section>
+
+    <!-- 关于 -->
+    <section>
+      <h2>关于</h2>
+      <div id="aboutText" class="about"></div>
+      <p class="hint">
+        本项目为开源软件（MIT License），参照了 Electron 生态与若干开源音乐客户端的设计，
+        详见 <a href="https://github.com" target="_blank" rel="noopener">THIRD_PARTY_NOTICES.md</a>。
+        本客户端不收集任何用户数据。
+      </p>
+    </section>
+
+    <footer>
+      <button id="btnDefaults" class="ghost">恢复默认</button>
+      <button id="btnSave" class="primary">保存设置</button>
+    </footer>
+    <div id="toast" class="toast hidden"></div>
+  </div>
+  <script src="settings.js"></script>
+</body>
+</html>

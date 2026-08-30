@@ -13,6 +13,7 @@
  */
 const logger = require('./logger');
 const settings = require('./settings');
+const serverUrl = require('./server-url'); // 日志脱敏用（审查轮 10 C P3）
 
 /** 在 guest 页面中执行的设备枚举脚本（字符串形式，注入执行） */
 const ENUMERATE_SNIPPET = `(async () => {
@@ -96,7 +97,7 @@ async function listDevices(guestWc) {
       errors.push('执行失败: ' + ((e && e.message) || e));
     }
   }
-  logger.warn('枚举音频设备失败（全部 frame）:', errors.join(' | '));
+  logger.warn('枚举音频设备失败（全部 frame）:', serverUrl.sanitizeUrl(errors.join(' | ')));
   return { ok: false, error: '设备枚举失败：' + errors[0] + (errors.length > 1 ? '（共 ' + errors.length + ' 个 frame 尝试）' : '') };
 }
 

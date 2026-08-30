@@ -307,17 +307,22 @@ function register(ctx) {
     } catch { result.cookieCount = -1; }
     if (wc && !wc.isDestroyed()) {
       // localStorage 按 frame 逐域收集（v0.1.10：iframe 跨域场景下登录态
-      // 可能落在子 frame 域——只查主 frame 会漏报）
+      // 可能落在子 frame 域——只查主 frame 会漏报；mainFrame null 守卫——
+      // 审查轮 10 A P2）
       const lsCode = '(() => { try { let n = 0, len = 0; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k) { n++; len += (k.length + String(localStorage.getItem(k) || "").length); } } return { keys: n, bytes: len }; } catch (e) { return { error: String(e && e.message || e) }; } })()';
-      const frames = [wc.mainFrame];
-      try {
-        for (const f of wc.mainFrame.framesInSubtree || []) {
-          if (f !== wc.mainFrame) frames.push(f);
-        }
-      } catch { /* 忽略 */ }
-      const lsResults = await Promise.allSettled(
-        frames.map((frame) => frame.executeJavaScript(lsCode, true).then((d) => ({ url: serverUrl.sanitizeUrl(frame.url || ''), data: d })).catch((e) => ({ url: serverUrl.sanitizeUrl(frame.url || ''), data: { error: e && e.message } })))
-      );
+      const frames = wc.mainFrame ? [wc.mainFrame] : [];
+      if (wc.mainFrame) {
+        try {
+          for (const f of wc.mainFrame.framesInSubtree || []) {
+            if (f !== wc.mainFrame) frames.push(f);
+          }
+        } catch { /* 忽略 */ }
+      }
+      const lsResults = frames.length
+        ? await Promise.allSettled(
+            frames.map((frame) => frame.executeJavaScript(lsCode, true).then((d) => ({ url: serverUrl.sanitizeUrl(frame.url || ''), data: d })).catch((e) => ({ url: serverUrl.sanitizeUrl(frame.url || ''), data: { error: e && e.message } })))
+          )
+        : [];
       result.localStorageByFrame = lsResults.filter((s) => s.status === 'fulfilled' && s.value).map((s) => s.value);
     }
     // 日志尾部（脱敏后展示，审查轮 C L1/L2：抹掉 URL query/token）

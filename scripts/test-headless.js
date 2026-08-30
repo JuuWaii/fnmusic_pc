@@ -441,7 +441,36 @@ console.log('\n[5] window-manager');
   ok('清空地址 → 回到 welcome 模式', () => {
     // 不抛错即可
   });
-  ok('diagnoseAllFrames 不抛错（getInjectFailures 作用域回归，审查轮 8 P1）', async () => {
+  ok('listDevices 多 frame 回退（主 frame 失败 → iframe 成功，审查轮 10）', async () => {
+    // 飞牛门户把音乐应用渲染在 iframe：主 frame 无 mediaDevices，iframe 可枚举
+    const audioDev = loadWithStub(path.join(ROOT, 'src/main/audio-devices.js'), electronStub());
+    const wc = makeWebContentsStub();
+    wc.mainFrame.executeJavaScript = async (code) => {
+      if (String(code).includes('enumerateDevices')) return { ok: false, error: 'mediaDevices API 不可用' };
+      return 2;
+    };
+    wc.mainFrame.framesInSubtree = [{
+      url: 'http://127.0.0.1:5666/music',
+      executeJavaScript: async (code) => {
+        if (String(code).includes('enumerateDevices')) return { ok: true, devices: [{ deviceId: 'dev-9', label: 'iframe 扬声器' }] };
+        return 2;
+      },
+    }];
+    const r = await audioDev.listDevices(wc);
+    assert.strictEqual(r.ok, true, 'iframe 枚举应成功');
+    assert.ok(r.devices.some((d) => d.deviceId === 'dev-9'), '应返回 iframe 设备');
+  });
+  ok('listDevices 全部 frame 失败时聚合错误（审查轮 10）', async () => {
+    const audioDev3 = loadWithStub(path.join(ROOT, 'src/main/audio-devices.js'), electronStub());
+    const wc3 = makeWebContentsStub();
+    wc3.mainFrame.executeJavaScript = async (code) => {
+      if (String(code).includes('enumerateDevices')) return { ok: false, error: 'mediaDevices API 不可用' };
+      return 2;
+    };
+    const r3 = await audioDev3.listDevices(wc3);
+    assert.strictEqual(r3.ok, false, '全部失败应返回 ok:false');
+    assert.ok(String(r3.error).includes('mediaDevices'), '错误信息应含原因');
+  });  ok('diagnoseAllFrames 不抛错（getInjectFailures 作用域回归，审查轮 8 P1）', async () => {
     // 曾因 injectFailures 声明在 createGuestView 函数体内，模块级 getter 访问越界抛 ReferenceError
     const d = await wm.diagnoseAllFrames();
     assert.ok(d && Array.isArray(d.frames), '应返回 { frames: [] }');

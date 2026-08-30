@@ -94,7 +94,6 @@ function onLyrics(payload) {
     ? payload.track.slice(0, MAX_TRACK_LENGTH)
     : '';
   state.lines = lines;
-  logger.info('桌面歌词已更新:', state.track || '(未知名)');
 }
 
 /** 上报播放进度 */
@@ -103,7 +102,7 @@ function onAudioState(payload) {
   state.currentTime = Number(payload.currentTime) || 0;
   state.playing = Boolean(payload.playing);
   if (typeof payload.title === 'string' && payload.title && !state.track) {
-    state.track = payload.title;
+    state.track = payload.title.slice(0, MAX_TRACK_LENGTH);
   }
 }
 
@@ -145,7 +144,12 @@ function createWindow() {
     // 仅当歌词仍处于开启状态时显示（避免开关竞态）
     if (state.enabled && state.win && !state.win.isDestroyed()) state.win.showInactive();
   });
-  state.win.on('closed', () => { state.win = null; });
+  state.win.on('closed', () => {
+    state.win = null;
+    // 窗口被系统关闭（Alt+F4 等）时同步开关状态，保证再次开启能重建（审查轮 B B12）
+    state.enabled = false;
+    if (state.tickTimer) { clearInterval(state.tickTimer); state.tickTimer = null; }
+  });
   registerWindowIpcOnce();
   return state.win;
 }

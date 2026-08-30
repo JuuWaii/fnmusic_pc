@@ -16,6 +16,7 @@ files:
   - LICENSE
   - README.md
   - THIRD_PARTY_NOTICES.md
+  - build/icon.png   # 托盘图标（打包进 asar，tray.js 读取）
 
 asar: true
 

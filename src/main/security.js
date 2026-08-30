@@ -44,7 +44,7 @@ function setupGuestSessionSecurity(ses, getSettings) {
     const originUrl = (details && details.requestingUrl) || webContents.getURL();
     const trusted = isTrustedOrigin(getSettings, originUrl);
     if (!trusted) {
-      logger.info('拒绝权限请求（来源不在已配置服务器）:', permission, originUrl || '?');
+      logger.info('拒绝权限请求（来源不在已配置服务器）:', permission, serverUrl.sanitizeUrl(originUrl) || '?');
       callback(false);
       return;
     }
@@ -96,9 +96,9 @@ function setupGuestSessionSecurity(ses, getSettings) {
 function setupWindowOpenHandler(wc) {
   wc.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http://') || url.startsWith('https://')) {
-      shell.openExternal(url).catch(() => logger.warn('打开外部链接失败:', url));
+      shell.openExternal(url).catch(() => logger.warn('打开外部链接失败:', serverUrl.sanitizeUrl(url)));
     } else {
-      logger.warn('拒绝非 http(s) 新窗口:', url);
+      logger.warn('拒绝非 http(s) 新窗口:', serverUrl.sanitizeUrl(url));
     }
     return { action: 'deny' };
   });

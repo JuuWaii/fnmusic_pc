@@ -27,8 +27,8 @@
 
 1. 用户在工具栏 / 设置中选择设备 → 主进程保存 deviceId 并通过 IPC 下发给 guest-preload；
 2. 隔离世界 preload 对媒体元素调用 `HTMLMediaElement.setSinkId`；
-   主世界脚本代理 `AudioContext` 并调用 `AudioContext.setSinkId`；
-   双通道将网页播放器声音定向到所选设备；
+   主世界脚本代理 `AudioContext`（构造期 sinkId + suspend/resume 序列，
+   处理 Chromium 对运行中上下文切换不生效的限制），并广播到全部 frame；
 3. 配合 MutationObserver + 周期扫描，兼容 SPA 动态创建播放器的场景。
 
 ## 4. 桌面歌词管线（可选功能）
@@ -56,6 +56,6 @@
 
 ## 7. 可扩展点
 
-- 系统托盘常驻 / 全局媒体键：在 main.js 中挂接 tray 与 globalShortcut 即可；
+- 全局媒体键：在 main.js 中挂接 globalShortcut 即可（系统托盘已实现：tray.js，关闭按钮默认最小化到托盘）；
 - 更多歌词源：扩展 guest-preload 的嗅探规则；
 - 多服务器配置：settings.js 增加 profile 字段即可。

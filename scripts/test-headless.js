@@ -56,6 +56,8 @@ function makeWebContentsStub() {
     _sent: [],
     send(ch, data) { this._sent.push({ ch, data }); },
     on() {},
+    once() {},
+    mainFrame: { framesInSubtree: [], executeJavaScript: async () => {} },
     executeJavaScript: async (code) => {
       if (String(code).includes('enumerateDevices')) {
         return { ok: true, devices: [{ deviceId: 'dev-1', label: '扬声器' }, { deviceId: 'dev-2', label: '耳机' }] };

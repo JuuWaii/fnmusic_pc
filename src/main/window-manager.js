@@ -105,6 +105,7 @@ function createMainWindow() {
   });
 
   mainWindow.on('resize', () => layout());
+  let readyTimer = null; // ready-to-show 超时兜底定时器（closed 时清理）
 
   // 关闭按钮（X）行为：
   // - 「关闭时最小化到托盘」开启：隐藏到托盘，网页继续后台播放；
@@ -124,11 +125,13 @@ function createMainWindow() {
     guestAttached = false;
     clearWatchdog();
     clearTimeout(reloadTimer);
+    clearTimeout(readyTimer);
+    // 主窗口真正关闭（托盘退出/关闭托盘选项）时退出整个应用
     app.quit();
   });
   // 渲染就绪后再显示；若 GPU/渲染异常导致 ready-to-show 迟迟不触发，
   // 5 秒后强制显示窗口（黑屏问题兜底），并记录日志便于排查。
-  const readyTimer = setTimeout(() => {
+  readyTimer = setTimeout(() => {
     if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
       logger.warn('ready-to-show 超时（5s），强制显示窗口——疑似渲染异常');
       mainWindow.show();
@@ -188,7 +191,10 @@ function createGuestView() {
     }
   });
 
-  /** 向主 frame 及其全部子 frame 注入主世界脚本 */
+  /** 注入失败记录（供诊断接口展示，审查轮 A P12） */
+  const injectFailures = [];
+
+  /** 向主 frame 及其全部后代 frame 注入主世界脚本（framesInSubtree 覆盖嵌套 iframe） */
   function injectMainWorldIntoFrames() {
     const script = getMainWorldScript();
     if (!script) return;
@@ -196,7 +202,9 @@ function createGuestView() {
     try {
       if (wc.mainFrame) {
         frames.push(wc.mainFrame);
-        for (const f of wc.mainFrame.frames || []) frames.push(f);
+        for (const f of wc.mainFrame.framesInSubtree || []) {
+          if (f !== wc.mainFrame) frames.push(f);
+        }
       }
     } catch (e) {
       logger.warn('枚举 frame 失败:', e.message);
@@ -218,7 +226,12 @@ function createGuestView() {
           'window.__fnmusicSetSinkNow && window.__fnmusicSetSinkNow(' + JSON.stringify(deviceId) + ');'
         );
       })
-      .catch((e) => logger.warn('主世界注入失败:', e.message));
+      .catch((e) => {
+        const msg = 'frame 注入失败: ' + (e && e.message || e);
+        logger.warn(msg);
+        injectFailures.push(msg.slice(0, 200));
+        if (injectFailures.length > 10) injectFailures.shift();
+      });
   }
 
   wc.on('did-start-loading', () => pushStatus());
@@ -456,6 +469,35 @@ function onGuestPageLoaded(cb) {
   if (typeof cb === 'function') pageLoadedCallbacks.push(cb);
 }
 
+/** 注入失败记录（诊断用） */
+function getInjectFailures() {
+  return injectFailures.slice();
+}
+
+/** 收集全部 frame 的主世界诊断（审查轮 A P8：iframe 播放器场景不再"全绿误导"） */
+async function diagnoseAllFrames() {
+  const result = { frames: [], injectFailures: getInjectFailures() };
+  if (!guestView || guestView.webContents.isDestroyed() || !guestView.webContents.mainFrame) return result;
+  const frames = [guestView.webContents.mainFrame];
+  try {
+    for (const f of guestView.webContents.mainFrame.framesInSubtree || []) {
+      if (f !== guestView.webContents.mainFrame) frames.push(f);
+    }
+  } catch { /* 忽略 */ }
+  const code = '(window.__fnmusicDiagnose ? window.__fnmusicDiagnose() : { injected: false })';
+  const tasks = frames.map((frame) =>
+    frame
+      .executeJavaScript(code, true)
+      .then((d) => ({ url: frame.url || '', data: d }))
+      .catch((e) => ({ url: frame.url || '', data: { injected: false, error: e && e.message } }))
+  );
+  const settled = await Promise.allSettled(tasks);
+  for (const s of settled) {
+    if (s.status === 'fulfilled' && s.value) result.frames.push(s.value);
+  }
+  return result;
+}
+
 /** 首次内容加载完成（--smoke-test 用） */
 function resolveFirstContent() {
   if (firstContentDone) return;
@@ -483,6 +525,7 @@ module.exports = {
   getMainWindow,
   getGuestWebContents,
   onGuestPageLoaded,
+  diagnoseAllFrames,
   pushStatus,
   whenFirstContent,
   GUEST_PARTITION,

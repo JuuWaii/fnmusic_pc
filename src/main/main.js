@@ -55,6 +55,7 @@ if (!gotLock) {
 } else {
   app.on('second-instance', () => {
     // 已有实例运行：显示并聚焦主窗口（解决"双击没反应"——旧实例还在后台）
+    // tray.showMainWindow 内部对「托盘尚未创建」场景有 window-manager 兜底
     tray.showMainWindow();
   });
 
@@ -112,7 +113,7 @@ async function runSmokeTest() {
   }
 }
 
-// 全部窗口关闭即退出（音乐客户端无需驻留托盘）
+// 全部窗口关闭即退出（托盘「退出」路径；关闭按钮默认最小化到托盘，见 window-manager）
 app.on('window-all-closed', () => {
   app.quit();
 });

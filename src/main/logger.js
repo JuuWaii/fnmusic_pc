@@ -49,7 +49,20 @@ function write(level, msg, ...args) {
   console.log(line);
   const file = ensureFile();
   if (file) {
-    try { fs.appendFileSync(file, line + '\n'); } catch { /* 忽略写日志错误 */ }
+    try {
+      // 轮转：单文件超过 1MB 时归档（main-<date>-<n>.log），保留最近 5 份（审查轮 C L4）
+      const size = fs.statSync(file).size;
+      if (size > 1024 * 1024) {
+        const base = file.replace(/\.log$/, '');
+        for (let n = 4; n >= 1; n--) {
+          const src = base + '-' + n + '.log';
+          const dst = base + '-' + (n + 1) + '.log';
+          try { if (fs.existsSync(src)) fs.renameSync(src, dst); } catch { /* 忽略 */ }
+        }
+        try { fs.renameSync(file, base + '-1.log'); } catch { /* 忽略 */ }
+      }
+      fs.appendFileSync(file, line + '\n');
+    } catch { /* 忽略写日志错误 */ }
   }
 }
 

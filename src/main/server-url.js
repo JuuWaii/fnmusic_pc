@@ -117,4 +117,26 @@ function displayHost(url) {
   }
 }
 
-module.exports = { validateUrl, applyMusicPath, resolve, isConfigured, displayHost };
+/**
+ * URL 脱敏（日志/诊断用）：去掉 query 与 hash，并抹掉常见凭据形参，防止
+ * token/session 等凭据落盘或被分享（审查轮 C L1）。
+ * @param {string} raw
+ * @returns {string}
+ */
+function sanitizeUrl(raw) {
+  if (!raw) return '';
+  try {
+    const u = new URL(raw);
+    // 抹掉常见凭据形参（保留其他 query 的业务含义有限，一并清除更安全）
+    const clean = u.search
+      ? u.search.replace(/([?&](?:token|access_token|session|sid|sign|auth|key|secret)=)[^&]*/gi, '$1***')
+      : '';
+    u.search = clean;
+    u.hash = '';
+    return u.toString().replace(/\/$/, '');
+  } catch {
+    return '';
+  }
+}
+
+module.exports = { validateUrl, applyMusicPath, resolve, isConfigured, displayHost, sanitizeUrl };

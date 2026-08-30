@@ -4,8 +4,10 @@
  *
  * 职责（与主世界脚本 guest-mainworld.js 分工）：
  * 1. 音频输出设备（需求 4）——媒体元素路径
- *    - 周期性 + MutationObserver（rAF 去抖）扫描页面 <audio>/<video> 元素（含 Shadow DOM、
- *      iframe，preload 在会话内所有 frame 生效），调用 setSinkId 定向输出；
+ *    - 周期性 + MutationObserver（rAF 去抖）扫描页面 <audio>/<video> 元素（含 Shadow DOM），
+ *      调用 setSinkId 定向输出；
+ *    - 注意：本 preload 默认只在主 frame 运行（nodeIntegrationInSubFrames=false）；
+ *      iframe 内的重定向由主进程对各 frame 直接广播 __fnmusicSetSinkNow 完成（见 audio-devices.js）；
  *    - 按「元素 ↔ 已应用设备」记账（WeakMap），设备切换后立即对既有元素重新应用，
  *      修复早期版本"已标记元素不再重应用"的缺陷；
  *    - AudioContext 路径由主世界脚本处理（隔离世界无法影响页面主世界的 AudioContext）。

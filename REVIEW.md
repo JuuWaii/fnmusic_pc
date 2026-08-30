@@ -75,9 +75,23 @@
 
 ## 验证手段（最终）
 
-- 无头测试套件：`npm test`（41 项全过）
+- 无头测试套件：`npm test`（52 项全过）
 - 隐私合规检查：`npm run check:privacy`（41 个跟踪文件 0 违规，含 fn-connect 域名/点文件扫描）
 - 打包验证：`electron-builder --dir`（win-unpacked）与 NSIS/portable 安装包均构建成功
 
 > 注：本开发环境的沙箱限制（禁止子进程管道/信号管道）导致 Electron GUI 无法在此环境启动，
 > 相关真机验证（cookie 持久化重启、真实设备切换、歌词捕获）需在用户正常桌面环境执行 `npm run smoke`。
+## 审查轮 5：音频修复后三轮审查（A 音频正确性 / B 整体回归 / C 安全隐私）
+
+审查轮 A（音频）：确认 suspend→setSinkId→resume 方向正确，修复 P1（iframe 切换失效——
+preload 默认仅主 frame，改为设备切换时向全部 frame 广播 __fnmusicSetSinkNow）、P2（空设备
+同步抛错导致永久静音——全链路 try/catch + resume 保证）、P3（并发切换串行化 epoch）、
+P4（closed context 清理）、P5（suspended 幂等切换）、P6（新 context 构造期 sinkId 选项）、
+P8（诊断聚合全部 frame + ctx.sinkId 真切换校验）、P11（framesInSubtree 注入）、P12（注入失败记录）。
+
+审查轮 B（整体回归）：E1 已修（HEAD 测试桩 once + 提交工作区）；B6 托盘图标加入打包 files；
+B3 托盘未创建时 second-instance 兜底；B12 歌词窗被系统关闭后开关状态同步；B1/B4 注释与定时器清理。
+
+审查轮 C（安全隐私）：L1 日志 URL 脱敏（query/hash 剥离 + token 形参打码）；L2 诊断 logTail
+展示前脱敏；L3 移除歌名日志；L4 日志 1MB 轮转留 5 份；L5 liveContexts 清理；L6 title 截断；
+L7 托盘常驻行为文档化。隐私合规复检通过（43 文件 0 违规）。

@@ -127,20 +127,44 @@ if (typeof window !== 'undefined') {
     // 已创建的 AudioContext 登记表（设备切换时一并重定向）
     const liveContexts = [];
 
-    // 代理 AudioContext：新上下文自动定向输出
+    /**
+     * 创建 AudioContext 的补丁构造器：
+     * - 首选：构造期直接传入 sinkId 选项（Chromium 110+/Electron 33+ 支持，
+     *   创建即定向输出，无竞态、不打断播放）——审查轮 A P6；
+     * - 兜底：构造抛错（如 sinkId 不被支持）时回退普通构造 + setTimeout(0) 补应用。
+     */
     const OrigAC = window.AudioContext || window.webkitAudioContext;
     if (OrigAC && !OrigAC.__fnSinkPatched) {
       const PatchedAC = function () {
-        const ctx = new OrigAC(...arguments);
+        let ctx = null;
+        if (sinkId) {
+          try {
+            const opts = arguments.length && arguments[0] && typeof arguments[0] === 'object'
+              ? Object.assign({}, arguments[0])
+              : {};
+            opts.sinkId = sinkId;
+            ctx = new OrigAC(opts);
+          } catch (err) {
+            diagPush('audio-context-new', false, 'sinkId 构造失败，回退: ' + (err && err.message || err));
+            ctx = null;
+          }
+        }
+        if (!ctx) {
+          try {
+            ctx = new OrigAC(...arguments);
+          } catch (err) {
+            diagPush('audio-context-new', false, '构造失败: ' + (err && err.message || err));
+            throw err; // 与原生行为一致：构造失败向上抛
+          }
+        }
         liveContexts.push(ctx);
         diag.contexts = liveContexts.length;
-        setTimeout(() => {
-          if (ctx.setSinkId && sinkId) {
-            ctx.setSinkId(sinkId)
-              .then(() => diagPush('audio-context', true, 'sink=' + sinkId))
-              .catch((err) => diagPush('audio-context', false, err && err.message || err));
-          }
-        }, 0);
+        if (!sinkId || ctx.sinkId !== sinkId) {
+          // 构造期未生效（无设备/不支持/已运行）：延后一帧补应用
+          setTimeout(() => {
+            if (sinkId) applySinkToContext(ctx);
+          }, 0);
+        }
         return ctx;
       };
       PatchedAC.prototype = OrigAC.prototype;
@@ -151,13 +175,123 @@ if (typeof window !== 'undefined') {
       diag.audioContextPatched = true;
     }
 
+    /**
+     * 对单个 AudioContext 应用输出设备（审查轮 A P2/P3/P4/P5 修复）：
+     * - 已知限制：Chromium 对「正在播放」的 AudioContext 直接 setSinkId 返回成功
+     *   但输出流不重建（WPT 状态转换测试印证），需 suspend → setSinkId → resume
+     *   强制重路由（毫秒级中断）；
+     * - P2：所有调用路径包 try/catch，suspend 成功后才进入切换，任何异常都保证
+     *   恢复播放（不留下永久暂停的静音上下文）；
+     * - P3：epoch 串行化——快速连续切换时只有最新一次切换生效；
+     * - P4：closed 上下文从登记表移除，防内存增长；
+     * - P5：suspended 上下文用幂等 suspend→setSinkId 并保持 suspended
+     *   （不主动 resume，尊重页面暂停意图；生效依赖下次 resume，诊断中标注）。
+     */
+    function applySinkToContext(ctx) {
+      if (!ctx || typeof ctx.setSinkId !== 'function') {
+        diagPush('audio-context', false, 'setSinkId 不可用');
+        return;
+      }
+      if (ctx.state === 'closed') {
+        // 从登记表移除，避免长期会话内存增长
+        const i = liveContexts.indexOf(ctx);
+        if (i >= 0) liveContexts.splice(i, 1);
+        return;
+      }
+      // 串行化：本 context 的切换纪元递增，过期链不再执行 setSinkId
+      const epoch = (ctx.__fnSinkEpoch = (ctx.__fnSinkEpoch || 0) + 1);
+
+      const doSwitch = (method) => {
+        let p = null;
+        try {
+          p = ctx.setSinkId(sinkId);
+        } catch (err) {
+          // 同步抛错（空设备 '' 在部分实现上会抛）：记录并跳过
+          diagPush('audio-context', false, 'sync error: ' + (err && err.message || err) + ' method=' + method);
+          return null;
+        }
+        return Promise.resolve(p).then(
+          () => {
+            // 验证真切换：ctx.sinkId 是否等于目标（部分版本需要第二次调用才生效）
+            const applied = ctx.sinkId === sinkId;
+            diagPush('audio-context', true, 'sink=' + sinkId + ' method=' + method + ' applied=' + applied + ' state=' + ctx.state);
+            if (!applied) {
+              // 假成功：再试一次（部分 Chromium 版本第二次调用生效）
+              try {
+                return Promise.resolve(ctx.setSinkId(sinkId)).then(
+                  () => diagPush('audio-context', true, 'retry sink=' + sinkId + ' method=' + method),
+                  (err) => diagPush('audio-context', false, 'retry failed: ' + (err && err.message || err))
+                );
+              } catch (err) {
+                diagPush('audio-context', false, 'retry sync error: ' + (err && err.message || err));
+              }
+            }
+            return null;
+          },
+          (err) => {
+            diagPush('audio-context', false, (err && err.message || err) + ' method=' + method);
+            return null;
+          }
+        );
+      };
+
+      const switchAndResume = () => {
+        // epoch 校验：只有最新一次切换允许执行
+        if (ctx.__fnSinkEpoch !== epoch) return Promise.resolve();
+        const switching = doSwitch('suspend-resume');
+        if (!switching) return Promise.resolve(ctx.resume ? ctx.resume().catch(() => {}) : null);
+        return switching.then(() => {
+          if (ctx.state !== 'closed' && typeof ctx.resume === 'function') {
+            return ctx.resume().catch((err) => diagPush('audio-context', false, 'resume failed: ' + (err && err.message || err)));
+          }
+          return null;
+        });
+      };
+
+      if (ctx.state === 'running' && typeof ctx.suspend === 'function') {
+        // 正在播放：suspend → setSinkId → resume（suspend 失败退化为直接切换）
+        let suspended = false;
+        ctx.suspend()
+          .then(() => { suspended = true; })
+          .catch((err) => {
+            diagPush('audio-context', false, 'suspend failed, direct switch: ' + (err && err.message || err));
+            suspended = false;
+          })
+          .then(() => {
+            if (suspended && ctx.__fnSinkEpoch === epoch) {
+              return switchAndResume();
+            }
+            // suspend 失败或已被更新切换取代：直接 setSinkId（不打断播放）
+            if (ctx.__fnSinkEpoch === epoch) {
+              const p = doSwitch('direct');
+              if (p) p.catch(() => {});
+            }
+            return null;
+          })
+          .catch((err) => diagPush('audio-context', false, 'switch chain error: ' + (err && err.message || err)));
+      } else if (ctx.state === 'suspended') {
+        // 已暂停：幂等 suspend→setSinkId，保持 suspended（生效依赖下次 resume）
+        if (typeof ctx.suspend === 'function') {
+          ctx.suspend().catch(() => {}).then(() => {
+            if (ctx.__fnSinkEpoch === epoch) {
+              const p = doSwitch('suspended');
+              if (p) p.catch(() => {});
+            }
+          });
+        } else {
+          const p = doSwitch('suspended-direct');
+          if (p) p.catch(() => {});
+        }
+      } else {
+        // 其他状态（interrupted/unknown）：直接切换
+        const p = doSwitch('direct');
+        if (p) p.catch(() => {});
+      }
+    }
+
     // 对已创建的 AudioContext 重定向（设备切换）
     function applySinkToContexts() {
-      for (const ctx of liveContexts) {
-        if (ctx && ctx.setSinkId) {
-          ctx.setSinkId(sinkId).catch(() => {});
-        }
-      }
+      for (const ctx of liveContexts) applySinkToContext(ctx);
     }
 
     // 接收隔离世界转发的设备切换指令
@@ -179,6 +313,7 @@ if (typeof window !== 'undefined') {
       diag.iframes = document.querySelectorAll('iframe').length;
       diag.sinkId = sinkId;
       diag.contexts = liveContexts.length;
+      diag.contextStates = liveContexts.map((c) => c && c.state ? c.state : 'unknown');
       return diag;
     };
     // 立即设置初始设备（注入后由主进程回放当前设置）

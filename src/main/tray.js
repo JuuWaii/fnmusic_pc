@@ -47,9 +47,12 @@ function createTray(mainWindowGetter) {
   return tray;
 }
 
-/** 显示主窗口 */
+/** 显示主窗口（托盘尚未创建时也能通过 window-manager 兜底恢复） */
 function showMainWindow() {
-  const w = getMainWindow && getMainWindow();
+  let w = getMainWindow && getMainWindow();
+  if (!w) {
+    try { w = require('./window-manager').getMainWindow(); } catch { /* 忽略 */ }
+  }
   if (!w || w.isDestroyed()) return;
   if (w.isMinimized()) w.restore();
   w.show();

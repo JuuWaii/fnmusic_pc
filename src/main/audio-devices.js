@@ -78,6 +78,31 @@ async function listDevices(guestWc) {
 }
 
 /**
+ * 向 guest 全部 frame 广播设备切换（审查轮 A P1 修复）
+ *
+ * 背景：session.setPreloads 的 preload 默认只在主 frame 运行（nodeIntegrationInSubFrames
+ * 默认 false），iframe 内页面的 AudioContext/媒体元素收不到 postMessage 转发。
+ * 因此除主 frame 的 preload 通道外，还需直接对每个 frame 的主世界执行
+ * __fnmusicSetSinkNow（该函数由注入脚本提供，设备切换时对元素与上下文重定向）。
+ *
+ * @param {import('electron').WebContents} wc
+ * @param {string} deviceId
+ */
+function broadcastSinkToAllFrames(wc, deviceId) {
+  if (!wc || wc.isDestroyed() || !wc.mainFrame) return;
+  const frames = [wc.mainFrame];
+  try {
+    for (const f of wc.mainFrame.framesInSubtree || []) frames.push(f);
+  } catch { /* 枚举失败不阻塞主路径 */ }
+  const code = 'window.__fnmusicSetSinkNow && window.__fnmusicSetSinkNow(' + JSON.stringify(deviceId) + ');';
+  for (const frame of frames) {
+    try {
+      frame.executeJavaScript(code).catch(() => {});
+    } catch { /* frame 已销毁等，忽略 */ }
+  }
+}
+
+/**
  * 切换音频输出设备并持久化
  * @param {import('electron').WebContents | null} guestWc
  * @param {string} deviceId '' = 跟随系统
@@ -86,7 +111,10 @@ function setDevice(guestWc, deviceId) {
   const id = typeof deviceId === 'string' ? deviceId : '';
   settings.update({ audioDeviceId: id });
   if (guestWc && !guestWc.isDestroyed()) {
+    // 主 frame 隔离世界通道（媒体元素记账 + 转发主世界）
     guestWc.send('fnmusic:set-audio-device', { deviceId: id });
+    // 全部 frame 主世界直接广播（含 iframe 场景）
+    broadcastSinkToAllFrames(guestWc, id);
   }
   logger.info('音频输出设备已切换:', id === '' ? '系统默认' : id);
 }

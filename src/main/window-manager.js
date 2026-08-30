@@ -88,6 +88,22 @@ function createMainWindow() {
   // 壳页面禁止任意导航（壳本身是静态本地页面）
   mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
 
+  // 壳页面渲染生命周期日志（诊断黑屏用）
+  mainWindow.webContents.on('did-start-loading', () => logger.info('壳页面开始加载'));
+  mainWindow.webContents.on('did-finish-load', () => {
+    logger.info('壳页面加载完成:', mainWindow.webContents.getURL());
+  });
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
+    logger.error('壳页面加载失败:', code, desc);
+  });
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    logger.error('壳页面渲染进程异常:', details.reason);
+  });
+  mainWindow.webContents.on('console-message', (_e, level, message) => {
+    // 页面侧 console 输出（仅记录错误与警告）
+    if (level >= 2) logger.warn('[壳页面]', String(message).slice(0, 300));
+  });
+
   mainWindow.on('resize', () => layout());
 
   // 关闭按钮（X）行为：
@@ -124,6 +140,17 @@ function createMainWindow() {
   });
   mainWindow.on('show', () => logger.info('主窗口已显示'));
   mainWindow.on('hide', () => logger.info('主窗口已隐藏'));
+
+  // 显示后 3 秒自检壳页面状态（诊断黑屏）
+  mainWindow.webContents.once('did-finish-load', () => {
+    setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.webContents
+        .executeJavaScript('({ ready: document.readyState, title: document.title, url: location.href, bodyChildren: document.body ? document.body.children.length : -1, css: !!document.styleSheets.length })', true)
+        .then((s) => logger.info('壳页面自检:', JSON.stringify(s)))
+        .catch((e) => logger.error('壳页面自检失败:', e && e.message));
+    }, 3000);
+  });
 
   loadHome();
   return mainWindow;

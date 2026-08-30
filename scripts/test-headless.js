@@ -173,6 +173,36 @@ console.log('\n[1] server-url');
     const r = su.resolve({ serverUrl: '', remoteUrl: '', accessMode: 'auto' });
     assert.strictEqual(r.url, null);
   });
+  ok('空路径地址自动追加 /music', () => {
+    const r = su.resolve({ serverUrl: 'http://127.0.0.1:5666', remoteUrl: '', accessMode: 'auto', musicPath: '/music' });
+    assert.strictEqual(r.url, 'http://127.0.0.1:5666/music');
+  });
+  ok('已含路径的地址不重复追加', () => {
+    const r = su.resolve({ serverUrl: 'http://127.0.0.1:5666/music', remoteUrl: '', accessMode: 'auto', musicPath: '/music' });
+    assert.strictEqual(r.url, 'http://127.0.0.1:5666/music');
+  });
+  ok('musicPath 置空则不追加', () => {
+    const r = su.resolve({ serverUrl: 'http://127.0.0.1:5666', remoteUrl: '', accessMode: 'auto', musicPath: '' });
+    assert.strictEqual(r.url, 'http://127.0.0.1:5666');
+  });
+  ok('无 musicPath 字段时保持兼容（不追加）', () => {
+    const r = su.resolve({ serverUrl: 'http://127.0.0.1:5666', remoteUrl: '', accessMode: 'auto' });
+    assert.strictEqual(r.url, 'http://127.0.0.1:5666');
+  });
+  ok('auto 模式远程回退目标也追加路径', () => {
+    const r = su.resolve({
+      serverUrl: 'http://127.0.0.1:5666',
+      remoteUrl: 'https://x.' + 'fnos.net',
+      accessMode: 'auto', musicPath: '/music',
+    });
+    assert.strictEqual(r.url, 'http://127.0.0.1:5666/music');
+    assert.strictEqual(r.fallback, 'https://x.' + 'fnos.net/music');
+  });
+  ok('applyMusicPath 独立函数行为', () => {
+    assert.strictEqual(su.applyMusicPath('http://127.0.0.1:5666', { musicPath: '/music' }), 'http://127.0.0.1:5666/music');
+    assert.strictEqual(su.applyMusicPath('http://127.0.0.1:5666/music', { musicPath: '/music' }), 'http://127.0.0.1:5666/music');
+    assert.strictEqual(su.applyMusicPath('not-a-url', { musicPath: '/music' }), null);
+  });
   ok('isConfigured 判定', () => {
     assert.strictEqual(su.isConfigured({ serverUrl: '', remoteUrl: '' }), false);
     assert.strictEqual(su.isConfigured({ serverUrl: 'http://127.0.0.1:5666', remoteUrl: '' }), true);

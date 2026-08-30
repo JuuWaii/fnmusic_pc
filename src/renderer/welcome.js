@@ -11,6 +11,7 @@ const $ = (id) => document.getElementById(id);
   const s = await api.getSettings();
   $('serverUrl').value = s.serverUrl || '';
   $('remoteUrl').value = s.remoteUrl || '';
+  $('musicPath').value = s.musicPath || '';
   $('accessMode').value = s.accessMode || 'auto';
 })();
 
@@ -40,6 +41,7 @@ $('btnStart').addEventListener('click', async () => {
   const result = await api.saveSettings({
     serverUrl,
     remoteUrl,
+    musicPath: $('musicPath').value.trim(),
     accessMode: $('accessMode').value,
   });
   if (result && result.ok === false) {

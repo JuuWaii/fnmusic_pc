@@ -148,7 +148,8 @@ function register(ctx) {
   /* ---------- 服务器 ---------- */
   ipcMain.handle('server:test', async (event, rawUrl) => {
     if (!isTrustedShellSender(event)) return { ok: false, error: '拒绝访问' };
-    const url = serverUrl.validateUrl(rawUrl);
+    // 与应用实际加载一致：自动追加音乐入口路径后再测试
+    const url = serverUrl.applyMusicPath(rawUrl, settings.getAll());
     if (!url) return { ok: false, error: '地址格式不正确（需 http:// 或 https://，且不超过 2048 字符）' };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 6000);

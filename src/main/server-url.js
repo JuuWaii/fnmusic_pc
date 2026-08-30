@@ -38,22 +38,67 @@ function validateUrl(raw) {
 }
 
 /**
- * 根据访问模式解析出「当前应加载」的地址
- * @param {{serverUrl:string, remoteUrl:string, accessMode:string}} settings
- * @returns {{url:string|null, mode:string, triedRemote:boolean}}
+ * 按设置给地址追加「音乐入口路径」
+ *
+ * 背景：飞牛音乐网页的实际入口是「门户根地址 + /music」
+ * （例如 http://192.168.x.x:5666/music），用户通常只填写门户根地址
+ * （打开后是飞牛 NAS 桌面）。若配置了 musicPath 且地址路径为空，自动追加。
+ * - 地址本身已包含路径（如已填 /music）时不追加；
+ * - musicPath 置空则完全不追加。
+ *
+ * @param {string|null} rawUrl 待处理地址
+ * @param {{musicPath?:string}} settings
+ * @returns {string|null} 处理后的地址
+ */
+function applyMusicPath(rawUrl, settings) {
+  const url = validateUrl(rawUrl);
+  if (!url) return null;
+  const path = settings && typeof settings.musicPath === 'string' ? settings.musicPath.trim() : '';
+  if (!path) return url;
+  try {
+    const u = new URL(url);
+    // 路径为空（'/' 或 ''）才追加
+    const base = u.pathname.replace(/\/+$/, '');
+    if (base) return url;
+    const p = path.startsWith('/') ? path : '/' + path;
+    u.pathname = p.replace(/\/+$/, '') || '/';
+    return u.toString().replace(/\/$/, '');
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * 根据访问模式解析出「当前应加载」的地址（含音乐入口路径与远程回退目标）
+ * @param {{serverUrl:string, remoteUrl:string, accessMode:string, musicPath?:string}} settings
+ * @returns {{url:string|null, mode:string, triedRemote:boolean, fallback:string|null}}
  */
 function resolve(settings) {
   const local = validateUrl(settings.serverUrl);
   const remote = validateUrl(settings.remoteUrl);
   const mode = settings.accessMode === 'remote' ? 'remote' : settings.accessMode === 'local' ? 'local' : 'auto';
 
-  if (mode === 'local') return { url: local, mode, triedRemote: false };
-  if (mode === 'remote') {
+  let url = null;
+  let fallback = null;
+  if (mode === 'local') {
+    url = local;
+  } else if (mode === 'remote') {
     // 仅远程模式：优先远程地址；远程未配置时退回本地
-    return { url: remote || local, mode, triedRemote: true };
+    url = remote || local;
+  } else {
+    // auto：本地优先（主进程在加载失败时自动尝试远程，见 window-manager.js）
+    url = local || remote;
   }
-  // auto：本地优先（主进程在加载失败时自动尝试远程，见 window-manager.js）
-  return { url: local || remote, mode, triedRemote: false };
+
+  if (url) url = applyMusicPath(url, settings);
+
+  // 远程回退目标（auto 模式本地优先、且远程地址存在且不同时）
+  if (mode === 'auto' && local && remote) {
+    const remoteEff = applyMusicPath(remote, settings);
+    if (remoteEff !== url) fallback = remoteEff;
+  }
+
+  return { url, mode, triedRemote: mode === 'remote', fallback };
 }
 
 /** 判断是否已配置任何可用地址（欢迎页/主界面切换用） */
@@ -72,4 +117,4 @@ function displayHost(url) {
   }
 }
 
-module.exports = { validateUrl, resolve, isConfigured, displayHost };
+module.exports = { validateUrl, applyMusicPath, resolve, isConfigured, displayHost };

@@ -273,7 +273,6 @@ function clearWatchdog() {
 function loadHome() {
   const s = settings.getAll();
   const resolved = serverUrl.resolve(s);
-  const remote = serverUrl.validateUrl(s.remoteUrl);
 
   if (!resolved.url) {
     switchShellMode('welcome');
@@ -286,8 +285,8 @@ function loadHome() {
   lastIntent = {
     url: resolved.url,
     mode: resolved.mode,
-    // 仅 auto 且本地优先时记录远程回退目标
-    fallback: resolved.mode === 'auto' && remote && resolved.url !== remote ? remote : null,
+    // 远程回退目标（已含音乐入口路径，见 server-url.resolve）
+    fallback: resolved.fallback,
     triedRemote: false,
   };
 

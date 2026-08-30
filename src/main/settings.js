@@ -22,6 +22,7 @@ const DEFAULTS = Object.freeze({
   ignoreCertErrors: false,  // 是否忽略证书错误（FN Connect 隧道证书异常时按需开启，默认关闭）
   showDesktopLyrics: false, // 桌面歌词开关（可选功能）
   lyricsOpacity: 0.9,       // 桌面歌词窗口不透明度 0.3~1
+  musicPath: '/music',      // 音乐入口路径：地址路径为空时自动追加（置空则不加）
 });
 
 /**

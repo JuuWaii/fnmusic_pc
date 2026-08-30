@@ -30,6 +30,7 @@ function showTest(ok, text) {
   $('serverUrl').value = current.serverUrl || '';
   $('remoteUrl').value = current.remoteUrl || '';
   $('accessMode').value = current.accessMode || 'auto';
+  $('musicPath').value = current.musicPath || '';
   $('lyricsEnabled').checked = Boolean(current.showDesktopLyrics);
   $('lyricsOpacity').value = current.lyricsOpacity ?? 0.9;
   $('opacityValue').textContent = current.lyricsOpacity ?? 0.9;
@@ -99,6 +100,7 @@ $('btnSave').addEventListener('click', async () => {
   const patch = {
     serverUrl: $('serverUrl').value.trim(),
     remoteUrl: $('remoteUrl').value.trim(),
+    musicPath: $('musicPath').value.trim(),
     accessMode: $('accessMode').value,
     showDesktopLyrics: $('lyricsEnabled').checked,
     lyricsOpacity: Number($('lyricsOpacity').value),
@@ -125,7 +127,7 @@ $('btnSave').addEventListener('click', async () => {
 $('btnDefaults').addEventListener('click', async () => {
   if (!confirm('确定恢复默认设置吗？服务器地址将被清空。')) return;
   await api.saveSettings({
-    serverUrl: '', remoteUrl: '', accessMode: 'auto',
+    serverUrl: '', remoteUrl: '', musicPath: '/music', accessMode: 'auto',
     audioDeviceId: '', ignoreCertErrors: false,
     showDesktopLyrics: false, lyricsOpacity: 0.9,
   });

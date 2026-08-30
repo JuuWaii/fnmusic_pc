@@ -210,6 +210,15 @@ function createGuestView() {
     const frame = details && details.frame;
     if (frame && (!wc.mainFrame || frame !== wc.mainFrame)) {
       injectIntoFrame(frame);
+      // 自动登录覆盖后加载 iframe（审查轮 11 A P2）：运行时新建的
+      // iframe 登录表单也注入自动填写（带 origin 过滤）
+      const s = settings.getAll();
+      if (s.loginUsername && s.loginPasswordSet
+        && security.isTrustedOrigin(() => settings.getAll(), frame.url || '')) {
+        try {
+          frame.executeJavaScript(autoLoginSnippet(s.loginUsername, settings.getLoginPassword()), true).catch(() => {});
+        } catch { /* 忽略 */ }
+      }
     }
   });
 
@@ -293,7 +302,9 @@ function createGuestView() {
     })()`;
   }
 
-  /** 向全部 frame 注入自动登录脚本（凭据来自设置，主进程直取明文） */
+  /** 向全部 frame 注入自动登录脚本（凭据来自设置，主进程直取明文）
+   * 审查轮 11 C P2：仅向「已配置服务器 origin」的 frame 注入——避免跨域
+   * iframe（广告/第三方嵌入）含密码框时被填入凭据。 */
   function injectAutoLoginIntoFrames() {
     const s = settings.getAll();
     if (!s.loginUsername || !s.loginPasswordSet) return;
@@ -308,6 +319,8 @@ function createGuestView() {
       }
     } catch { /* 忽略 */ }
     for (const frame of frames) {
+      // origin 过滤：仅信任已配置的服务器来源（跨域 iframe 不注入）
+      if (!security.isTrustedOrigin(() => settings.getAll(), frame.url || '')) continue;
       try {
         frame.executeJavaScript(script, true).catch(() => {});
       } catch { /* frame 已销毁等，忽略 */ }

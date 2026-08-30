@@ -46,12 +46,13 @@ function showTest(ok, text) {
   $('loginUsername').value = current.loginUsername || '';
   $('loginPassword').placeholder = current.loginPasswordSet ? '已保存（留空保持不变）' : '未设置';
 
-  // 欢迎模式：简化页面
+  // 欢迎模式：简化页面（审查轮 11 A P1：区块顺序变化后 nth-of-type 会偏移，
+  // 改用 id 选择器——隐藏高级与自动登录区块）
   if (isWelcome) {
     $('pageTitle').textContent = '欢迎使用 FN Music PC';
     $('pageSub').textContent = '填写飞牛音乐服务器地址即可开始（可随时在设置中修改）';
     $('sectionAdvanced').style.display = 'none';
-    document.querySelector('section:nth-of-type(3)').style.display = 'none'; // 高级
+    $('sectionAutoLogin').style.display = 'none';
     $('btnSave').textContent = '开始使用';
   }
 
@@ -127,9 +128,11 @@ $('btnSave').addEventListener('click', async () => {
   // 渲染异常机器上保存任意设置把软件渲染意外切回硬件加速 → 黑屏回归）
   if (hardwareTouched) patch.hardwareAcceleration = $('hardwareAcceleration').checked;
   // 自动登录凭据（v0.1.11）：账号变化才提交；密码仅当用户输入了新值才提交
-  // （留空 = 保持原密码不变）
-  if ($('loginUsername').value.trim() !== (current.loginUsername || '')) {
-    patch.loginUsername = $('loginUsername').value.trim();
+  // （留空 = 保持原密码不变）；账号被清空时同步清除密码（审查轮 11 P1）
+  const newUsername = $('loginUsername').value.trim();
+  if (newUsername !== (current.loginUsername || '')) {
+    patch.loginUsername = newUsername;
+    if (!newUsername) patch.loginPassword = ''; // 清空账号 → 一并清除已存密码
   }
   const newPass = $('loginPassword').value;
   if (newPass) patch.loginPassword = newPass;

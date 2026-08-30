@@ -10,7 +10,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { app } = require('electron');
+const { app, safeStorage } = require('electron');
 const logger = require('./logger');
 
 /** 默认设置（对外发布时不含任何个人信息，服务器地址为空） */
@@ -104,7 +104,6 @@ function sanitize(key, value) {
 function encryptPassword(plain) {
   if (!plain) return '';
   try {
-    const { safeStorage } = require('electron');
     if (safeStorage.isEncryptionAvailable()) {
       return 'enc:' + safeStorage.encryptString(String(plain)).toString('base64');
     }
@@ -117,7 +116,6 @@ function decryptPassword(stored) {
   if (!stored) return '';
   try {
     if (stored.startsWith('enc:')) {
-      const { safeStorage } = require('electron');
       if (safeStorage.isEncryptionAvailable()) {
         return safeStorage.decryptString(Buffer.from(stored.slice(4), 'base64'));
       }
@@ -180,16 +178,21 @@ function load() {
 }
 
 /** 保存设置（部分更新；仅接受白名单键；loginPassword 为明文临时载体——
- * 落盘前加密为 loginPasswordEnc，settings.json 不保存明文密码） */
+ * 落盘前加密为 loginPasswordEnc，settings.json 不保存明文密码）
+ * 审查轮 11 A P3：账号/密码长度上限（防超大值写盘） */
 function update(patch) {
   const p = patch || {};
-  // 登录密码特殊处理：明文 → 加密后存入 loginPasswordEnc
+  // 登录密码特殊处理：明文 → 加密后存入 loginPasswordEnc（上限 512 字符）
   if ('loginPassword' in p) {
-    const plain = typeof p.loginPassword === 'string' ? p.loginPassword : '';
+    const plain = typeof p.loginPassword === 'string' ? p.loginPassword.slice(0, 512) : '';
     state.loginPasswordEnc = encryptPassword(plain);
   }
   for (const k of Object.keys(p)) {
-    if (KEYS.includes(k) && k !== 'loginPasswordEnc') state[k] = sanitize(k, p[k]);
+    if (KEYS.includes(k) && k !== 'loginPasswordEnc') {
+      let v = p[k];
+      if (k === 'loginUsername' && typeof v === 'string') v = v.slice(0, 128); // 账号上限
+      state[k] = sanitize(k, v);
+    }
   }
   try {
     fs.writeFileSync(settingsFile(), JSON.stringify(state, null, 2), 'utf8');
@@ -203,7 +206,9 @@ function update(patch) {
 function getAll() {
   const out = { ...state };
   delete out.loginPasswordEnc; // 密文仅主进程内部使用
-  out.loginPasswordSet = Boolean(state.loginPasswordEnc); // 布尔标志供 UI 展示
+  // loginPasswordSet 反映「可解密」而非仅「密文存在」——safeStorage 不可用
+  // 或跨机器（DPAPI 密钥不匹配）时解密失败应视为未设置（审查轮 11 A P2）
+  out.loginPasswordSet = Boolean(decryptPassword(state.loginPasswordEnc));
   return out;
 }
 

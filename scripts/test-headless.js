@@ -321,6 +321,36 @@ console.log('\n[2] settings');
     st3.update({ loginUsername: '', loginPassword: '' });
     assert.strictEqual(st3.getLoginPassword(), '');
   });
+  ok('自动登录凭据：safeStorage 不可用降级 b64 + 跨环境解密失败视为未设置（审查轮 11）', () => {
+    // b64 降级：safeStorage 不可用时仍可加密/解密（混淆存储）
+    const stubNoSafe = electronStub();
+    stubNoSafe.safeStorage = {
+      isEncryptionAvailable: () => false,
+      encryptString: () => { throw new Error('unavailable'); },
+      decryptString: () => { throw new Error('unavailable'); },
+    };
+    const stB64 = loadWithStub(path.join(ROOT, 'src/main/settings.js'), stubNoSafe);
+    stB64.load();
+    stB64.update({ loginUsername: 'b64-user', loginPassword: 'pw-7ch' });
+    assert.strictEqual(stB64.getLoginPassword(), 'pw-7ch', 'b64 降级应可回读');
+    assert.strictEqual(stB64.getAll().loginPasswordSet, true);
+    // 跨环境：密文存在但解密失败（DPAPI 密钥不匹配模拟）→ loginPasswordSet=false
+    const stubBroken = electronStub();
+    stubBroken.safeStorage = {
+      isEncryptionAvailable: () => true,
+      encryptString: () => Buffer.from('x'),
+      decryptString: () => { throw new Error('key mismatch'); },
+    };
+    const stBroken = loadWithStub(path.join(ROOT, 'src/main/settings.js'), stubBroken);
+    stBroken.load();
+    stBroken.update({ loginUsername: 'broken-user', loginPassword: 'pw-7ch' });
+    const sb = stBroken.getAll();
+    assert.strictEqual(sb.loginPasswordSet, false, '解密失败应视为未设置');
+    // 长度上限：超长账号/密码被截断
+    st.update({ loginUsername: 'u'.repeat(200), loginPassword: 'p'.repeat(600) });
+    assert.strictEqual(st.getAll().loginUsername.length, 128);
+    assert.strictEqual(st.getLoginPassword().length, 512);
+  });
   ok('readConfiguredOriginsPreReady 提取 http 来源（排除 https）', () => {
     st.update({ remoteUrl: 'https://secure.example.com' }); // 应被排除
     const origins = st.readConfiguredOriginsPreReady();

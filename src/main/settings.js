@@ -16,7 +16,7 @@ const logger = require('./logger');
 /** 默认设置（对外发布时不含任何个人信息，服务器地址为空） */
 const DEFAULTS = Object.freeze({
   serverUrl: '',            // 飞牛音乐本地服务器地址，例如 http://<你的NAS内网IP>:5666
-  remoteUrl: '',            // FN Connect 远程访问地址，例如 https://xxxx.fnos.net
+  remoteUrl: '',            // FN Connect 远程访问地址，例如 https://<你的FN Connect域名>
   accessMode: 'auto',       // auto=优先本地失败切远程 | local=仅本地 | remote=仅远程
   audioDeviceId: '',        // 音频输出设备 id，'' = 跟随系统默认设备
   ignoreCertErrors: false,  // 是否忽略证书错误（FN Connect 隧道证书异常时按需开启，默认关闭）

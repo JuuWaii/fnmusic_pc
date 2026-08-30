@@ -11,7 +11,7 @@
  * - 歌词数据完全来自飞牛音乐网页自身接口，本应用不抓取、不上传任何数据；
  * - 若网页接口不提供歌词，窗口显示提示文案（属预期行为，功能为「尽力而为」）。
  */
-const { BrowserWindow, screen, ipcMain } = require('electron');
+const { BrowserWindow, screen, ipcMain, app } = require('electron');
 const path = require('path');
 const logger = require('./logger');
 const settings = require('./settings');
@@ -77,10 +77,18 @@ const MAX_LRC_LENGTH = 200 * 1024;
 const MAX_TRACK_LENGTH = 200;
 
 function onLyrics(payload) {
-  if (!payload || typeof payload.lrc !== 'string') return;
-  if (payload.lrc.length > MAX_LRC_LENGTH) return;
+  // 无有效载荷/新曲目无歌词：清空旧歌词（避免显示上一首的歌词）
+  if (!payload || typeof payload.lrc !== 'string' || payload.lrc.length > MAX_LRC_LENGTH) {
+    state.lines = [];
+    state.track = '';
+    return;
+  }
   const lines = parseLrc(payload.lrc);
-  if (!lines.length) return;
+  if (!lines.length) {
+    state.lines = [];
+    state.track = payload.track && typeof payload.track === 'string' ? payload.track.slice(0, MAX_TRACK_LENGTH) : '';
+    return;
+  }
   // 新歌词到达：若载荷未带歌名则清空旧歌名（等待 audio-state 的标题补充）
   state.track = typeof payload.track === 'string' && payload.track
     ? payload.track.slice(0, MAX_TRACK_LENGTH)
@@ -128,6 +136,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      devTools: !app.isPackaged, // 生产包禁用开发者工具
     },
   });
   state.win.setAlwaysOnTop(true, 'screen-saver');
@@ -166,7 +175,12 @@ function setEnabled(enabled) {
   if (want === state.enabled) return;
   state.enabled = want;
   if (want) {
-    if (!state.win || state.win.isDestroyed()) createWindow();
+    if (!state.win || state.win.isDestroyed()) {
+      createWindow();
+    } else {
+      // 窗口已存在（曾被隐藏）：重新显示
+      state.win.showInactive();
+    }
     if (!state.tickTimer) state.tickTimer = setInterval(tick, 250);
     logger.info('桌面歌词已开启');
   } else {
@@ -195,6 +209,16 @@ function setInteractive(interactive) {
 
 /* ---------------- 歌词窗口 IPC（拖动 / 关闭 / 穿透） ---------------- */
 
+/** 校验发送方：必须是本应用歌词窗口页面（纵深防御） */
+function isLyricsWindowSender(event) {
+  try {
+    const url = (event.senderFrame && event.senderFrame.url) || event.sender.getURL();
+    return url.startsWith('file://') && url.includes('/renderer/lyrics.html');
+  } catch {
+    return false;
+  }
+}
+
 function registerWindowIpcOnce() {
   if (windowIpcRegistered) return;
   windowIpcRegistered = true;
@@ -203,24 +227,26 @@ function registerWindowIpcOnce() {
 
 function registerWindowIpc() {
   // 拖动开始：记录起点（屏幕坐标）
-  ipcMain.on('lyrics:drag-start', (_e, p) => {
+  ipcMain.on('lyrics:drag-start', (e, p) => {
+    if (!isLyricsWindowSender(e)) return;
     if (!state.win || state.win.isDestroyed()) return;
     if (!p || typeof p.screenX !== 'number' || typeof p.screenY !== 'number') return;
     state.dragStart = { sx: p.screenX, sy: p.screenY, wx: state.win.getPosition()[0], wy: state.win.getPosition()[1] };
   });
   // 拖动移动：按屏幕坐标差移动窗口
-  ipcMain.on('lyrics:drag-move', (_e, p) => {
+  ipcMain.on('lyrics:drag-move', (e, p) => {
+    if (!isLyricsWindowSender(e)) return;
     if (!state.win || state.win.isDestroyed() || !state.dragStart) return;
     if (!p || typeof p.screenX !== 'number' || typeof p.screenY !== 'number') return;
     const dx = p.screenX - state.dragStart.sx;
     const dy = p.screenY - state.dragStart.sy;
     state.win.setPosition(state.dragStart.wx + dx, state.dragStart.wy + dy);
   });
-  ipcMain.on('lyrics:drag-end', () => { state.dragStart = null; });
+  ipcMain.on('lyrics:drag-end', (e) => { if (isLyricsWindowSender(e)) state.dragStart = null; });
   // 关闭按钮
-  ipcMain.on('lyrics:close', () => { setEnabled(false); });
+  ipcMain.on('lyrics:close', (e) => { if (isLyricsWindowSender(e)) setEnabled(false); });
   // 点击穿透切换
-  ipcMain.on('lyrics:toggle-interactive', () => { setInteractive(!state.interactive); });
+  ipcMain.on('lyrics:toggle-interactive', (e) => { if (isLyricsWindowSender(e)) setInteractive(!state.interactive); });
 }
 
 /** 应用退出前的清理 */

@@ -3,6 +3,8 @@ node_modules/
 dist/
 out/
 .npm-cache/
+.builder-cache/
+.electron-cache/
 
 # 用户个人配置（含内网地址等个人信息，严禁提交到版本库）
 dev.config.json
@@ -10,10 +12,12 @@ dev.config.json
 # 用户任务笔记（含个人信息，严禁提交到版本库）
 新建 文本文档.txt
 
+# 调试/下载产物
+electron-tmp.zip
+probe-*.txt
+.review-audit/
+
 # 日志与系统文件
 *.log
 .DS_Store
-Thumbs.db.builder-cache/# 调试/下载产物
-electron-tmp.zip
-probe-*.txt
-.builder-cache/
+Thumbs.db

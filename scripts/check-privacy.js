@@ -27,6 +27,12 @@ function trackedFilesFromIndex() {
     return null;
   }
   if (buf.length < 12 || buf.toString('ascii', 0, 4) !== 'DIRC') return null;
+  const indexVersion = buf.readUInt32BE(4);
+  if (indexVersion !== 2) {
+    // v3/v4（前缀压缩）无法可靠解析文件名，报告并退化到目录扫描
+    console.log('警告: git 索引版本 ' + indexVersion + '（不支持解析），退化为目录扫描');
+    return null;
+  }
   const count = buf.readUInt32BE(8);
   const files = [];
   let offset = 12;
@@ -87,10 +93,14 @@ const PATTERNS = [
   { name: '凭据（token/secret/password/key）', re: /(?:token|secret|password|passwd|api[_-]?key|authorization|sessionid)\s*[:=]\s*['"][^'"]{8,}['"]/i },
   { name: 'Cookie 明文', re: /cookie\s*[:=]\s*['"][^'"]{10,}['"]/i },
   { name: 'URL 内嵌凭据', re: /https?:\/\/[^\s/]+:[^\s/@]+@/ },
+  // FN Connect 个人远程访问域名（官方代理域名的子域即个人地址）
+  { name: 'FN Connect 个人域名', re: /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:fnos\.net|5ddd\.com|trzznas\.com)\b/i },
 ];
 
 /** 文档/示例文件中允许出现示例 IP */
 const ALLOW_IP_FILES = new Set(['README.md', 'docs/ARCHITECTURE.md', 'THIRD_PARTY_NOTICES.md', 'dev.config.json.example']);
+/** 允许出现 FN Connect 示例域名的文件（文档中的 xxxx.fnos.net 说明性示例） */
+const ALLOW_FNCONNECT_FILES = new Set(['README.md', 'docs/ARCHITECTURE.md', 'THIRD_PARTY_NOTICES.md', 'dev.config.json.example', 'REVIEW.md', 'scripts/check-privacy.js']);
 const ALLOWED_IP = ['127.0.0.1', '0.0.0.0', '::1'];
 
 let violations = 0;
@@ -102,7 +112,9 @@ function checkFile(file) {
     report.push('✗ 禁止文件出现在版本库: ' + file);
     return;
   }
-  if (!/\.(js|json|md|yml|yaml|html|css|txt|example)$/i.test(file)) return;
+  // 点文件（.npmrc/.gitignore 等）也纳入内容扫描
+  const isDotfile = /^\.[a-z0-9_-]+$/i.test(path.basename(file));
+  if (!isDotfile && !/\.(js|json|md|yml|yaml|html|css|txt|example)$/i.test(file)) return;
   let content;
   try {
     content = fs.readFileSync(path.join(ROOT, file), 'utf8');
@@ -115,6 +127,12 @@ function checkFile(file) {
       const filtered = matches.filter((m) => !ALLOWED_IP.includes(m));
       if (!filtered.length) continue;
       if (ALLOW_IP_FILES.has(file)) continue;
+    }
+    // FN Connect 示例域名仅在文档文件中允许
+    if (name === 'FN Connect 个人域名' && ALLOW_FNCONNECT_FILES.has(file)) {
+      // 文档中的说明性示例（如 https://xxxx.fnos.net）放行
+      const filtered = matches.filter((m) => !/\bxxxx\./.test(m));
+      if (!filtered.length) continue;
     }
     violations++;
     report.push('✗ [' + name + '] ' + file + ' → ' + matches.slice(0, 3).join(', '));

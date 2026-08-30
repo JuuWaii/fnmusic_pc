@@ -17,18 +17,18 @@ const serverUrl = require('./server-url');
  */
 function isTrustedOrigin(getSettings, rawUrl) {
   if (!rawUrl) return false;
-  let host;
+  let origin;
   try {
-    host = new URL(rawUrl).hostname;
+    origin = new URL(rawUrl).origin; // 协议 + 主机 + 端口（默认端口归一化）
   } catch {
     return false;
   }
   const s = getSettings();
   const candidates = [serverUrl.validateUrl(s.serverUrl), serverUrl.validateUrl(s.remoteUrl)]
     .filter(Boolean)
-    .map((u) => { try { return new URL(u).hostname; } catch { return null; } })
+    .map((u) => { try { return new URL(u).origin; } catch { return null; } })
     .filter(Boolean);
-  return candidates.includes(host);
+  return candidates.includes(origin);
 }
 
 /**
@@ -53,12 +53,13 @@ function setupGuestSessionSecurity(ses, getSettings) {
       callback(false);
       return;
     }
-    // media 权限按请求类型收窄：只放行音频（音频输出/输入），拒绝摄像头采集
+    // media 权限按请求类型收窄：仅放行纯音频请求（音频输出/输入），
+    // 任何含视频采集（摄像头）的请求一律拒绝
     if (permission === 'media') {
       const types = (details && details.mediaTypes) || [];
-      const allowAudio = types.length === 0 || types.includes('audio') || types.includes('audiooutput');
-      if (!allowAudio) {
-        logger.info('拒绝媒体权限（非音频）:', JSON.stringify(types));
+      const hasVideo = types.some((t) => t === 'video' || t === 'videoinput');
+      if (types.length > 0 && hasVideo) {
+        logger.info('拒绝媒体权限（含视频采集）:', JSON.stringify(types));
         callback(false);
         return;
       }

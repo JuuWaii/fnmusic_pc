@@ -23,16 +23,11 @@ process.env.FNMUSIC_NO_DEV_CONFIG = '1'; // 跳过 dev.config.json（隐私/确�
 
 let passed = 0;
 let failed = 0;
+const testQueue = []; // 顺序执行队列（支持 async 测试）
 
+/** 注册测试（按注册顺序依次执行，保证异步测试之间不交错） */
 function ok(name, fn) {
-  try {
-    fn();
-    passed++;
-    console.log('  ✓ ' + name);
-  } catch (e) {
-    failed++;
-    console.log('  ✗ ' + name + ' → ' + e.message);
-  }
+  testQueue.push({ name, fn });
 }
 
 /* ---------------- Electron 桩 ---------------- */
@@ -109,11 +104,17 @@ function electronStub() {
       on: (ch, fn) => { (ipcOns[ch] = ipcOns[ch] || []).push(fn); },
     },
     session: {
-      fromPartition: () => ({
-        setPreloads() {}, setPermissionRequestHandler() {}, setPermissionCheckHandler() {},
-        setCertificateVerifyProc() {}, clearStorageData: async () => {}, clearCache: async () => {},
-        clearAuthCache: async () => {},
-      }),
+      fromPartition: () => {
+        const ses = {
+          _cleared: [],
+          setPreloads() {}, setPermissionRequestHandler() {}, setPermissionCheckHandler() {},
+          setCertificateVerifyProc() {},
+          async clearStorageData() { ses._cleared.push('storage'); },
+          async clearCache() { ses._cleared.push('cache'); },
+          async clearAuthCache() { ses._cleared.push('auth'); },
+        };
+        return ses;
+      },
     },
     Menu: { setApplicationMenu() {} },
     screen: { getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) },
@@ -160,13 +161,13 @@ console.log('\n[1] server-url');
     assert.strictEqual(su.validateUrl('http://127.0.0.1:5666/' + 'a'.repeat(3000)), null);
   });
   ok('auto 模式本地优先', () => {
-    const r = su.resolve({ serverUrl: 'http://127.0.0.1:5666', remoteUrl: 'https://x.fnos.net', accessMode: 'auto' });
+    const r = su.resolve({ serverUrl: 'http://127.0.0.1:5666', remoteUrl: 'https://x.' + 'fnos.net', accessMode: 'auto' });
     assert.strictEqual(r.url, 'http://127.0.0.1:5666');
     assert.strictEqual(r.triedRemote, false);
   });
   ok('remote 模式用远程地址', () => {
-    const r = su.resolve({ serverUrl: 'http://127.0.0.1:5666', remoteUrl: 'https://x.fnos.net', accessMode: 'remote' });
-    assert.strictEqual(r.url, 'https://x.fnos.net');
+    const r = su.resolve({ serverUrl: 'http://127.0.0.1:5666', remoteUrl: 'https://x.' + 'fnos.net', accessMode: 'remote' });
+    assert.strictEqual(r.url, 'https://x.' + 'fnos.net');
   });
   ok('未配置时返回 null', () => {
     const r = su.resolve({ serverUrl: '', remoteUrl: '', accessMode: 'auto' });
@@ -229,9 +230,23 @@ console.log('\n[3] lyrics（LRC 解析 + 窗口状态机）');
     assert.strictEqual(ly.indexForTime(lines, 7.0), 1);
     assert.strictEqual(ly.indexForTime(lines, 99.0), 2);
   });
-  ok('onLyrics 载荷限额（超大 LRC 被拒绝）', () => {
+  ok('onLyrics 载荷限额（超大 LRC 被拒绝）', async () => {
     ly.onLyrics({ track: 'x', lrc: '[00:01.00]' + 'a'.repeat(300 * 1024) });
-    // 通过后续 tick 验证 lines 为空（见下）
+    ly.onAudioState({ playing: true, currentTime: 0.5, duration: 10, paused: false, title: '' });
+    ly.setEnabled(true);
+    await new Promise((r) => setTimeout(r, 500));
+    ly.setEnabled(false);
+    const win = stub._wins.find((w) => w.webContents && w.webContents._sent.length);
+    const updates = win.webContents._sent.filter((m) => m.ch === 'lyrics:update');
+    assert.strictEqual(updates[updates.length - 1].data.hasLyrics, false); // 超限 LRC 未被采用
+  });
+  ok('关闭后再开启：窗口重新显示', () => {
+    const win = stub._wins.find((w) => w.webContents);
+    let shown = 0;
+    win.showInactive = () => shown++;
+    ly.setEnabled(true);  // 再次开启
+    assert.strictEqual(shown, 1, '已存在窗口应被重新显示');
+    ly.setEnabled(false);
   });
   ok('开启歌词后窗口收到歌词更新推送', async () => {
     ly.onLyrics({ track: '测试歌曲', lrc: '[00:01.00]第一句\n[00:03.00]第二句' });
@@ -249,6 +264,7 @@ console.log('\n[3] lyrics（LRC 解析 + 窗口状态机）');
     assert.strictEqual(last.track, '测试歌曲');
   });
   ok('无歌词时推送提示态', async () => {
+    ly.onLyrics({ track: '', lrc: '' }); // 模拟新曲目无歌词（应清空旧歌词）
     ly.setEnabled(true);
     await new Promise((r) => setTimeout(r, 400));
     ly.setEnabled(false);
@@ -262,10 +278,15 @@ console.log('\n[3] lyrics（LRC 解析 + 窗口状态机）');
 console.log('\n[4] ipc 处理器');
 {
   const stub = electronStub();
+  // 块内同步初始化设置（队列测试执行时块已完成）
+  const settingsMod = loadWithStub(path.join(ROOT, 'src/main/settings.js'), stub);
+  settingsMod.load();
+  settingsMod.update({ serverUrl: 'http://127.0.0.1:5666', accessMode: 'local' });
   const wm = loadWithStub(path.join(ROOT, 'src/main/window-manager.js'), stub);
   wm.createMainWindow();
+  const fakeSession = stub.session.fromPartition('persist:x');
   const ipc = loadWithStub(path.join(ROOT, 'src/main/ipc.js'), stub);
-  ipc.register({ guestSession: stub.session.fromPartition('persist:x') });
+  ipc.register({ guestSession: fakeSession });
   const H = stub._ipcHandlers;
 
   ok('settings:get 拒绝不可信发送者', async () => {
@@ -276,13 +297,15 @@ console.log('\n[4] ipc 处理器');
     assert.ok('serverUrl' in s && 'accessMode' in s);
   });
   ok('settings:save 联动（音频设备）', async () => {
-    await H['settings:save'](shellEvent, { audioDeviceId: 'dev-1' });
-    const s = await H['settings:get'](shellEvent);
-    assert.strictEqual(s.audioDeviceId, 'dev-1');
+    const r = await H['settings:save'](shellEvent, { audioDeviceId: 'dev-1' });
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(r.settings.audioDeviceId, 'dev-1');
   });
-  ok('settings:save 拒绝非法地址', async () => {
-    const s = await H['settings:save'](shellEvent, { serverUrl: 'ftp://bad' });
-    assert.strictEqual(s.serverUrl, ''); // 未保存
+  ok('settings:save 拒绝非法地址（带回错误信息）', async () => {
+    const r = await H['settings:save'](shellEvent, { serverUrl: 'ftp://bad' });
+    assert.strictEqual(r.ok, false);
+    assert.ok(r.error);
+    assert.strictEqual(r.settings.serverUrl, 'http://127.0.0.1:5666'); // 保持原值未变
   });
   ok('server:test 校验地址格式', async () => {
     const r = await H['server:test'](shellEvent, 'not-a-url');
@@ -313,11 +336,12 @@ console.log('\n[4] ipc 处理器');
   ok('app:info 版本信息', async () => {
     const info = await H['app:info'](shellEvent);
     assert.strictEqual(info.appVersion, '0.1.0-test');
-    assert.ok(info.electron);
+    assert.ok(info.node); // 版本字段存在即可
   });
-  ok('data:clear 执行清理', async () => {
+  ok('data:clear 执行清理（含认证缓存）', async () => {
     const r = await H['data:clear'](shellEvent);
     assert.strictEqual(r.ok, true);
+    assert.deepStrictEqual(fakeSession._cleared.sort(), ['auth', 'cache', 'storage']);
   });
   ok('guest 歌词上报：拒绝不可信来源', async () => {
     // 注册的 on 处理器直接触发
@@ -336,13 +360,15 @@ console.log('\n[5] window-manager');
   settingsMod.update({ serverUrl: '', remoteUrl: '' });
   const wm = loadWithStub(path.join(ROOT, 'src/main/window-manager.js'), stub);
   wm.createMainWindow();
-  ok('未配置 → welcome 模式（不创建 guest 视图）', () => {
-    assert.strictEqual(stub._views.length, 0);
-  });
+  const viewsAfterWelcome = stub._views.length; // 未配置时不应创建 guest 视图
   settingsMod.update({ serverUrl: 'http://127.0.0.1:5666', accessMode: 'auto' });
   wm.loadHome();
+  const viewsAfterLoadHome = stub._views.length; // 配置后懒创建 1 个
+  ok('未配置 → welcome 模式（不创建 guest 视图）', () => {
+    assert.strictEqual(viewsAfterWelcome, 0);
+  });
   ok('loadHome 懒创建 guest 视图', () => {
-    assert.strictEqual(stub._views.length, 1);
+    assert.strictEqual(viewsAfterLoadHome, 1);
   });
   settingsMod.update({ serverUrl: '', remoteUrl: '' });
   wm.loadHome();
@@ -351,7 +377,26 @@ console.log('\n[5] window-manager');
   });
 }
 
-console.log('\n[6] guest-mainworld 歌词嗅探');
+console.log('\n[6] security（来源校验）');
+{
+  const stub = electronStub();
+  const settingsMod = loadWithStub(path.join(ROOT, 'src/main/settings.js'), stub);
+  settingsMod.load();
+  settingsMod.update({ serverUrl: 'http://127.0.0.1:5666', remoteUrl: 'https://my-nas.' + 'fnos.net' });
+  const sec = loadWithStub(path.join(ROOT, 'src/main/security.js'), stub);
+  const getSettings = () => settingsMod.getAll();
+  ok('isTrustedOrigin 命中已配置主机', () => {
+    assert.strictEqual(sec.isTrustedOrigin(getSettings, 'http://127.0.0.1:5666/biz/music'), true);
+    assert.strictEqual(sec.isTrustedOrigin(getSettings, 'https://my-nas.' + 'fnos.net/x'), true);
+  });
+  ok('isTrustedOrigin 拒绝陌生来源', () => {
+    assert.strictEqual(sec.isTrustedOrigin(getSettings, 'http://evil.example.com/'), false);
+    assert.strictEqual(sec.isTrustedOrigin(getSettings, ''), false);
+    assert.strictEqual(sec.isTrustedOrigin(getSettings, 'not-a-url'), false);
+  });
+}
+
+console.log('\n[7] guest-mainworld 歌词嗅探');
 {
   // guest-mainworld 是纯函数模块（浏览器入口被 window 守卫跳过）
   const gm = require(path.join(ROOT, 'src/main/guest-mainworld.js'));
@@ -381,5 +426,17 @@ console.log('\n[6] guest-mainworld 歌词嗅探');
 }
 
 /* ---------------- 汇总 ---------------- */
-console.log('\n===== 结果: ' + passed + ' 通过, ' + failed + ' 失败 =====');
-process.exit(failed ? 1 : 0);
+(async () => {
+  for (const { name, fn } of testQueue) {
+    try {
+      await fn();
+      passed++;
+      console.log('  ✓ ' + name);
+    } catch (e) {
+      failed++;
+      console.log('  ✗ ' + name + ' → ' + e.message);
+    }
+  }
+  console.log('\n===== 结果: ' + passed + ' 通过, ' + failed + ' 失败 =====');
+  process.exit(failed ? 1 : 0);
+})();

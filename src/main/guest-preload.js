@@ -52,6 +52,7 @@ function initGuest() {
 
   // 3) 主世界 → 本世界 → 主进程 的歌词桥
   window.addEventListener('message', (e) => {
+    if (!e || e.source !== window) return; // 仅接受本窗口消息，防 iframe 伪造
     const d = e && e.data;
     if (!d || typeof d !== 'object') return;
     const l = d.__fnmusicLyrics;

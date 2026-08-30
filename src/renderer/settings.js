@@ -109,8 +109,12 @@ $('btnSave').addEventListener('click', async () => {
   const curDevice = (current && current.audioDeviceId) || '';
   if (sel !== curDevice) patch.audioDeviceId = sel;
 
-  await api.saveSettings(patch);
+  const result = await api.saveSettings(patch);
   current = await api.getSettings();
+  if (result && result.ok === false) {
+    toast('保存失败：' + (result.error || '未知错误'), true);
+    return;
+  }
   toast('已保存并应用');
   if (isWelcome) {
     // 欢迎模式保存后直接关闭设置窗口，回到主界面

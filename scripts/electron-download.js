@@ -53,6 +53,7 @@ const MIRRORS = [
       fs.mkdirSync(dist, { recursive: true });
       execSync(`tar -xf "${ZIP}" -C "${dist}"`, { stdio: 'inherit' });
       fs.writeFileSync(path.join(ROOT, 'node_modules', 'electron', 'path.txt'), 'electron.exe');
+      try { fs.rmSync(ZIP); } catch { /* 清理失败不致命 */ }
       console.log('[download] OK: Electron ' + VERSION + ' 已就绪');
       process.exit(0);
     } catch (e) {

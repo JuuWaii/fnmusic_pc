@@ -26,14 +26,15 @@
 ## 3. 音频输出设备路由
 
 1. 用户在工具栏 / 设置中选择设备 → 主进程保存 deviceId 并通过 IPC 下发给 guest-preload；
-2. guest-preload 调用 `HTMLMediaElement.setSinkId` 与 `AudioContext.setSinkId`，
-   将网页播放器的声音定向到所选设备；
+2. 隔离世界 preload 对媒体元素调用 `HTMLMediaElement.setSinkId`；
+   主世界脚本代理 `AudioContext` 并调用 `AudioContext.setSinkId`；
+   双通道将网页播放器声音定向到所选设备；
 3. 配合 MutationObserver + 周期扫描，兼容 SPA 动态创建播放器的场景。
 
 ## 4. 桌面歌词管线（可选功能）
 
-1. guest-preload 钩住 `fetch` / `XMLHttpRequest`，嗅探 JSON 响应中的 LRC 歌词字段；
-2. 上报到主进程 lyrics.js 解析为时间轴行（mm:ss.xx）；
+1. 主世界注入脚本（guest-mainworld.js）钩住 fetch / XMLHttpRequest，按 URL 关键字过滤后嗅探 JSON 响应中的 LRC 歌词字段；
+2. 歌词经 window.postMessage 交给隔离世界 preload（guest-preload.js）转发主进程 lyrics.js，解析为时间轴行（mm:ss.xx）；
 3. guest-preload 每秒上报播放进度，lyrics.js 每 250ms 二分定位当前行并推送给歌词悬浮窗；
 4. 歌词窗口：无边框、置顶、可拖动、可点击穿透，数据仅存内存，不落盘。
 

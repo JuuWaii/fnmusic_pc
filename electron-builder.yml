@@ -41,3 +41,6 @@ nsis:
 #   $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 # 本项目无原生依赖，跳过 node_modules 重建（受限环境/CI 友好）
 npmRebuild: false
+# Electron 二进制下载缓存目录（重定向到项目内，兼容受限环境/CI）
+electronDownload:
+  cache: .electron-cache

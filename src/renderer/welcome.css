@@ -1,5 +1,12 @@
 /* 欢迎页样式 */
 * { margin: 0; padding: 0; box-sizing: border-box; }
+.dragbar {
+  position: fixed; top: 0; left: 0; right: 0; height: 44px;
+  -webkit-app-region: drag; /* 窗口拖动区 */
+  /* 右侧预留系统窗口按钮区域 */
+  padding-right: 150px;
+  pointer-events: auto;
+}
 body {
   font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
   background: linear-gradient(135deg, #14181f 0%, #1f2733 55%, #26303f 100%);

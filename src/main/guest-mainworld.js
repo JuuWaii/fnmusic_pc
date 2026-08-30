@@ -98,11 +98,15 @@ if (typeof window !== 'undefined') {
       } catch { /* 页面未就绪等，忽略 */ }
     }
 
+    // 已创建的 AudioContext 登记表（设备切换时一并重定向）
+    const liveContexts = [];
+
     // 代理 AudioContext：新上下文自动定向输出
     const OrigAC = window.AudioContext || window.webkitAudioContext;
     if (OrigAC && !OrigAC.__fnSinkPatched) {
       const PatchedAC = function () {
-        const ctx = new OrigAC();
+        const ctx = new OrigAC(...arguments);
+        liveContexts.push(ctx);
         setTimeout(() => {
           if (ctx.setSinkId && sinkId) {
             ctx.setSinkId(sinkId).catch(() => {});
@@ -117,13 +121,24 @@ if (typeof window !== 'undefined') {
       if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
     }
 
+    // 对已创建的 AudioContext 重定向（设备切换）
+    function applySinkToContexts() {
+      for (const ctx of liveContexts) {
+        if (ctx && ctx.setSinkId) {
+          ctx.setSinkId(sinkId).catch(() => {});
+        }
+      }
+    }
+
     // 接收隔离世界转发的设备切换指令
     window.addEventListener('message', (e) => {
+      if (!e || e.source !== window) return; // 仅接受本窗口消息，防 iframe 伪造
       const d = e && e.data;
       if (!d || typeof d !== 'object') return;
       if (d.__fnmusicSetSink && typeof d.__fnmusicSetSink.deviceId === 'string') {
         sinkId = d.__fnmusicSetSink.deviceId;
         applySinkToElements();
+        applySinkToContexts();
       }
     });
 

@@ -46,8 +46,14 @@ function openSettingsWindow(welcome) {
       devTools: !app.isPackaged,
     },
   });
-  // 设置窗口只允许加载本地页面
+  // 设置窗口只允许加载本地页面；外链一律交给系统浏览器
   settingsWindow.webContents.on('will-navigate', (e) => e.preventDefault());
+  settingsWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) {
+      require('electron').shell.openExternal(url).catch(() => {});
+    }
+    return { action: 'deny' };
+  });
   settingsWindow.loadFile(path.join(__dirname, '..', 'renderer', 'settings.html'), {
     query: { welcome: welcome ? '1' : '0' },
   });
@@ -98,7 +104,7 @@ function register(ctx) {
   });
 
   ipcMain.handle('settings:save', (event, patch) => {
-    if (!isTrustedShellSender(event)) return null;
+    if (!isTrustedShellSender(event)) return { ok: false, error: '拒绝访问' };
     const p = patch && typeof patch === 'object' ? patch : {};
 
     // 服务器地址在保存前统一规范化（长度上限 + 格式校验），防止脏数据入库
@@ -108,7 +114,7 @@ function register(ctx) {
         const normalized = raw ? serverUrl.validateUrl(raw) : '';
         if (raw && !normalized) {
           logger.warn('拒绝保存非法服务器地址');
-          return settings.getAll();
+          return { ok: false, error: '服务器地址格式不正确（需 http:// 或 https://）', settings: settings.getAll() };
         }
         p[key] = normalized;
       }
@@ -136,7 +142,7 @@ function register(ctx) {
       notifyGuestLyricsEnabled(next.showDesktopLyrics);
     }
     if ('lyricsOpacity' in p) lyrics.setOpacity(next.lyricsOpacity);
-    return next;
+    return { ok: true, settings: next };
   });
 
   /* ---------- 服务器 ---------- */

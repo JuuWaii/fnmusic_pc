@@ -149,7 +149,9 @@ function createGuestView() {
     if (errorCode === -3) return; // ERR_ABORTED：用户主动取消
     clearWatchdog();
     logger.warn('页面加载失败:', errorCode, errorDescription, serverUrl.displayHost(validatedURL));
-    if (lastIntent && lastIntent.fallback && !lastIntent.triedRemote && validatedURL === lastIntent.url) {
+    // 双侧归一化（Chromium 的 validatedURL 通常带尾斜杠，validateUrl 输出不带）
+    const norm = (u) => { try { return String(u).replace(/\/+$/, ''); } catch { return u; } };
+    if (lastIntent && lastIntent.fallback && !lastIntent.triedRemote && norm(validatedURL) === norm(lastIntent.url)) {
       lastIntent.triedRemote = true;
       logger.info('auto 模式：切换到 FN Connect 远程地址');
       wc.loadURL(lastIntent.fallback).catch((e) => logger.warn('远程地址加载失败:', e.message));

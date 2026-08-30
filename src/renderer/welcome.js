@@ -37,10 +37,14 @@ $('btnStart').addEventListener('click', async () => {
     showResult(false, '请至少填写一个服务器地址');
     return;
   }
-  await api.saveSettings({
+  const result = await api.saveSettings({
     serverUrl,
     remoteUrl,
     accessMode: $('accessMode').value,
   });
+  if (result && result.ok === false) {
+    showResult(false, '保存失败：' + (result.error || '未知错误'));
+    return;
+  }
   // 保存后主进程会切换到「工具栏 + 网页」模式，本页面被替换，无需额外操作
 });

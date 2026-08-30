@@ -46,7 +46,7 @@
 - **安全上下文**：`unsafely-treat-insecure-origin-as-secure` 标记已配置 http 来源（否则 mediaDevices 不可用）
 - **托盘**：X 关闭最小化到托盘（可关）、菜单（显示/隐藏/设置/退出）、单实例恢复窗口
 
-## 4. 版本历史（git 20 提交）
+## 4. 版本历史（git 24 提交）
 
 - **v0.1.0** 初始：网页嵌套/登录态/cookie 持久化/欢迎页/设备/歌词框架/托盘前身
 - **v0.1.1** 黑屏修复：禁用硬件加速 + ready-to-show 兜底
@@ -54,7 +54,8 @@
 - **v0.1.3** iframe 广播/构造期 sinkId/异常兜底/日志脱敏轮转/托盘图标/诊断聚合
 - **v0.1.4** 音频面板 + 音量系统 + 歌词捕获改进（XHR P0 回归修复）
 - **v0.1.5** 硬件加速可选项 + cookie flush + 诊断容错 + DOM 歌词兜底
-- **v0.1.6**（当前）**移除桌面歌词** + 登录态修复（固定 userData/迁移）+ 黑屏自愈闭环 + 卸载清理
+- **v0.1.6** 移除桌面歌词 + 登录态修复（固定 userData/迁移）+ 黑屏自愈闭环 + 卸载清理
+- **v0.1.7**（当前）**黑屏回归修复**：welcome 模式壳页面从不加载（shellMode 初始短路）→ 初始改 null 强制加载；三轮审查处置（回归测试真覆盖/诊断作用域修复/自愈误判加固）
 
 ## 5. 关键经验教训（新会话必读，避免重复踩坑）
 
@@ -70,7 +71,7 @@
 1. **纯 WebAudio 播放器**：诊断发现飞牛播放器无 <audio> 元素（elements:0），一切以 AudioContext 为准；隔离世界 preload 无法影响主世界（contextIsolation），必须主世界注入；
 2. **preload 默认只在主 frame 运行**（nodeIntegrationInSubFrames=false）→ iframe 场景必须主进程对 framesInSubtree 广播；
 3. **Chromium 限制**：运行中 AudioContext 直接 setSinkId 返回成功但输出不变（需 suspend/resume）；AudioContext 构造期 sinkId 选项可避免竞态；
-4. **黑屏**：GPU 合成失败（特定驱动/远程桌面）→ 禁用硬件加速/软件渲染；ready-to-show 可能不触发（需超时兜底强制显示）；
+4. **黑屏**：GPU 合成失败（特定驱动/远程桌面）→ 禁用硬件加速/软件渲染；ready-to-show 可能不触发（需超时兜底强制显示）；**黑屏 ≠ 一定是 GPU**——v0.1.7 教训：壳页面从未加载（switchShellMode 短路）同样表现为黑屏且软件渲染下依旧，判定依据是日志有无「壳页面开始加载/加载完成」；
 5. **登录态丢失**：便携版 userData 随 exe 移动 → 必须固定 userData 路径；cookie 异步写盘 → 周期 flush；
 6. **第三方面板数据捕获（歌词）不可靠**：fetch/XHR/WS/DOM 四通道均无法稳定获取飞牛歌词 → 按用户授权移除，避免过度投入；
 7. **日志是排查黑屏/登录态的关键**：生命周期日志、自检、诊断接口（设置页按钮）缺一不可；logger 失败必须显式报错（早期静默失败导致无法定位）；
@@ -81,33 +82,34 @@
 - 真实地址只在 gitignore 的 `dev.config.json` 与 `新建 文本文档.txt`（用户任务笔记，勿动勿提交）；
 - 日志/诊断对 URL 脱敏（sanitizeUrl：剥 query/hash、token 打码）、userData 路径 %USERPROFILE% 化。
 
-## 6. 当前状态（v0.1.6，工作区干净）
+## 6. 当前状态（v0.1.7，工作区干净）
 
-- git：20 提交，HEAD = `c222235`；`git status` 干净
-- 测试：`npm test` → scripts/test-headless.js **46/46 通过**
-- 隐私：`npm run check:privacy` → 46 文件 0 违规
-- 产物：`dist\FNMusicPC Setup 0.1.6.exe`（安装版 76.5MB）、`dist\FNMusicPC 0.1.6.exe`（便携版 76.3MB）
+- git：24 提交，HEAD = `6a366ba`（+版本号 0.1.7 待提交）；`git status` 干净
+- 测试：`npm test` → scripts/test-headless.js **48/48 通过**
+- 隐私：`npm run check:privacy` → 42 文件 0 违规
+- 产物：`dist\FNMusicPC Setup 0.1.7.exe`（安装版）、`dist\FNMusicPC 0.1.7.exe`（便携版）——构建后更新
 - 依赖：electron ^33.4.11、electron-builder ^26.15.3、node_modules 已装（含手动下载的 electron 二进制）
 
 ## 7. 待办与验证清单（用户真机）
 
-1. **登录态验证**：登录一次 → 托盘退出 → 重开免登录；看日志 `登录态 Cookie 文件` 与诊断 `cookieCount/localStorage`；
-2. **黑屏自愈验证**：第二台电脑安装 v0.1.6，若黑屏应弹「自动切换软件渲染」对话框 → 重启正常；
+1. **黑屏修复验证（v0.1.7 重点）**：全新安装/清空 settings.json 后启动应正常显示欢迎页；日志应出现「壳模式切换: welcome」「壳页面开始加载/加载完成」；若仍黑屏看日志定位（不再误判渲染异常）；
+2. **登录态验证**：登录一次 → 托盘退出 → 重开免登录；看日志 `登录态 Cookie 文件` 与诊断 `cookieCount/localStorage`；
 3. **音频面板**：工具栏 🔊 → 设备即选即生效 + 音量联动（已确认正常，回归验证）；
-4. **欢迎页测试**：移走 dev.config.json 后启动应显示欢迎页（地址预填来自 dev.config.json）；
+4. **欢迎页测试**：移走 dev.config.json 后启动应显示欢迎页（地址预填来自 dev.config.json）——v0.1.7 已修复该路径；
 5. **GitHub 发布（等用户授权）**：发布前替换 settings.html 关于区占位文本、确认 .npmrc 的 cache 行、跑 check-privacy + 全历史扫描；
-6. 遗留：dist/win-unpacked 曾因占用无法清理（EBUSY），如占用已释放可删除。
+6. 遗留：dist/win-unpacked 与 dist-new 曾因 Defender 占用无法清理（EBUSY），如占用已释放可删除。
 
 ## 8. 常用命令速查
 
 ```powershell
 cd D:\ai\DeepSeek Harness\fnmusic_pc
-npm test                 # 无头测试（46 项）
+npm test                 # 无头测试（48 项）
 npm run check:privacy    # 隐私合规检查
 npm start                # 源码启动（真机；控制台可见日志）
 npm run smoke            # 冒烟测试（真机；自动加载自检退出）
 npm run dist             # 打包（真机直接可用；本沙箱需升级权限+镜像环境变量）
 # 打包环境变量：$env:ELECTRON_BUILDER_CACHE=".builder-cache"; $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+# 输出目录被占用时：npm run dist -- --config.directories.output=dist-new
 ```
 
 ## 9. 用户偏好与协作约定

@@ -222,10 +222,13 @@ function createGuestView() {
     }
   });
 
-  // 自动登录（v0.1.11）：已配置登录凭据时，页面加载后向全部 frame 注入
-  // 自动填写脚本——检测到登录表单即填入账号密码并提交。
+  // 自动登录（v0.1.11+）：已配置登录凭据时，向全部 frame 注入自动填写脚本。
+  // 注入时机：dom-ready（DOM 就绪即注入，尽早开始检测——用户反馈页面 <1s
+  // 加载完，did-finish-load 等待完整资源可能错过时机）+ did-finish-load 兜底
+  // （覆盖 SPA 后续渲染与重载）。脚本内含 150ms 高频循环检测，表单出现即登录。
   // 注：session cookie（music-token 无过期时间）在重启后丢失，门户重新
   // 要求登录；自动填写是本机用户授权的便捷方案（凭据 safeStorage 加密存储）。
+  wc.on('dom-ready', () => injectAutoLoginIntoFrames());
   wc.on('did-finish-load', () => injectAutoLoginIntoFrames());
 
   /** 向主 frame 及其全部后代 frame 注入主世界脚本（framesInSubtree 覆盖嵌套 iframe） */
@@ -249,15 +252,12 @@ function createGuestView() {
   /**
    * 自动登录填写脚本（注入到页面主世界执行）。
    *
-   * v0.1.12 重写（审查轮 12 A）：飞牛音乐登录页是 SPA——初始 HTML 只有
-   * #root + Loading 动画，登录表单由 JS 异步渲染。因此：
-   * - 立即尝试 + setInterval 轮询（1s） + MutationObserver 三重触发；
-   * - 总时限 60s，成功即停；
-   * - 可见性判断改用 getClientRects()（fixed/absolute 定位元素 offsetParent
-   *   为 null 会被旧逻辑误判不可见——Semi Design UI 常见）；
-   * - 用户名字段按 placeholder/name/id 匹配（账号/手机/邮箱等）；
-   * - 登录按钮匹配 textContent + aria-label。
-   * 仅在页面出现密码输入框时动作；无凭据/无表单则静默退出。
+   * v0.1.16 简化版（用户需求：抛弃等待循环/结果判定/超时逻辑）：
+   * - 页面打开后启动循环检测，持续检测「登录页是否加载完成」；
+   * - 判定标准：可见密码输入框出现（无论页面其余部分渲染进度）；
+   * - 检测到即可登录 → 立即填写账号密码并点击登录按钮，只提交一次；
+   * - 提交后清理循环（任务完成），无成功/错误/重试/超时逻辑。
+   * 仅在页面出现密码输入框时动作；无凭据则静默退出。
    */
   function autoLoginSnippet(username, password, trustedOrigins) {
     const creds = JSON.stringify({ username: String(username || ''), password: String(password || '') });
@@ -271,7 +271,7 @@ function createGuestView() {
       // 审查轮 14 C P2：页面侧 origin 校验——仅当当前页面属于「已配置服务器
       // origin ∪ FN Connect 官方代理域」时才自动填写，防止用户从信任页导航到
       // 外站（钓鱼/无关登录表单）时凭据被误填。
-      // 注：模板字符串中正则须用双反斜杠（\\/ 与 \\.），否则经字符串字面量
+      // 注：模板字符串中正则须用双反斜杠（\\\\/ 与 \\\\.），否则经字符串字面量
       // 解析后反斜杠丢失导致 SyntaxError（v0.1.14 失效根因）。
       try {
         const cur = location.origin;
@@ -295,7 +295,6 @@ function createGuestView() {
         } catch (e) { return false; }
       };
       const findUserInput = () => {
-        // 优先 placeholder/name/id 含账号/手机/邮箱/用户关键词
         const cands = Array.from(document.querySelectorAll('input')).filter((el) => {
           if (el.type === 'password' || el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return false;
           if (!isVisible(el)) return false;
@@ -303,57 +302,55 @@ function createGuestView() {
           return /user|account|phone|mobile|email|login|账号|用户|手机|邮箱|帐号/.test(hint);
         });
         if (cands.length) return cands[0];
-        // 兜底：第一个可见的非密码输入框
         return Array.from(document.querySelectorAll('input')).find((el) => el.type !== 'password' && el.type !== 'hidden' && el.type !== 'submit' && el.type !== 'button' && isVisible(el));
       };
-      // 审查轮 12 修复：/music/login 有「使用 NAS 登录」（primary）与「登录」
-      // （submit）两个按钮——旧正则 /登录/ 会先命中「使用 NAS 登录」导致点错。
-      // 修复：优先 type=submit（原生提交），其次精确文本「登录」并排除 NAS/忘记。
       const findLoginBtn = () => {
         const btns = Array.from(document.querySelectorAll('button, [role="button"], input[type="submit"]'));
         const submitBtn = btns.find((b) => b.type === 'submit' && isVisible(b));
         if (submitBtn) return submitBtn;
         return btns.find((b) => {
           const t = ((b.textContent || '') + ' ' + (b.getAttribute && b.getAttribute('aria-label') || '')).trim();
-          return /^(登录|登\s*录|登陆|立即登录|sign\s*in|log\s*in)$/i.test(t)
+          return /^(登录|登\\s*录|登陆|立即登录|sign\\s*in|log\\s*in)$/i.test(t)
             && !/NAS|忘记|注册/i.test(t)
             && isVisible(b);
         });
       };
-      let done = false;
-      const tryFill = () => {
-        if (done) return true;
-        const passEls = Array.from(document.querySelectorAll('input[type="password"]')).filter(isVisible);
-        if (!passEls.length) return false;
-        const userEl = findUserInput();
-        const passEl = passEls[0];
-        if (!userEl || !passEl) return false;
-        // 已填过且值一致 → 直接提交
-        if (userEl.value === creds.username && passEl.value === creds.password) {
-          done = true;
-          const btn = findLoginBtn();
-          if (btn) setTimeout(() => { try { btn.click(); } catch (e) {} }, 200);
-          return true;
-        }
-        setVal(userEl, creds.username);
-        setVal(passEl, creds.password);
-        done = true;
-        const btn = findLoginBtn();
-        if (btn) setTimeout(() => { try { btn.click(); } catch (e) {} }, 300);
-        return true;
+      let submitted = false;    // 只提交一次
+      let stopped = false;
+      let timer = null, mo = null;
+      const stop = () => {
+        stopped = true;
+        if (timer) clearInterval(timer);
+        if (mo) mo.disconnect();
       };
-      // 三重触发：立即 + 1s 轮询 + MutationObserver（SPA 异步渲染登录表单）
-      let tries = 0;
-      const stop = () => { clearInterval(timer); if (mo) mo.disconnect(); };
       const attempt = () => {
-        tries++;
-        if (tryFill() || tries > 60) stop(); // 60s 上限
+        if (stopped || submitted) return;
+        try {
+          // 循环检测登录页是否加载完成：可见密码框出现即认为可登录
+          const passEls = Array.from(document.querySelectorAll('input[type="password"]')).filter(isVisible);
+          if (!passEls.length) return; // 未加载完成，继续检测
+          const userEl = findUserInput();
+          const passEl = passEls[0];
+          if (!userEl || !passEl) return;
+          // 立即填写账号密码
+          setVal(userEl, creds.username);
+          setVal(passEl, creds.password);
+          // 点击登录按钮（只提交一次）
+          const btn = findLoginBtn();
+          if (btn) {
+            try { btn.click(); } catch (e) {}
+          }
+          submitted = true;
+          stop(); // 任务完成，清理循环
+        } catch (e) { /* 单次检测失败，下轮继续 */ }
       };
-      const timer = setInterval(attempt, 1000);
-      let mo = null;
+      // 循环检测：150ms 高频轮询 + MutationObserver 即时触发。
+      // 监听 childList + subtree + attributes（含 style/class——SPA 可能用
+      // display/opacity 切换表单显示，仅监听 class 会漏触发）。
+      timer = setInterval(attempt, 150);
       try {
         mo = new MutationObserver(() => attempt());
-        mo.observe(document.documentElement, { childList: true, subtree: true });
+        mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
       } catch (e) { mo = null; }
       attempt();
     })()`;

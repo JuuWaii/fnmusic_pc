@@ -284,7 +284,10 @@ console.log('\n[1b] autoLoginSnippet 按钮匹配（审查轮 12：不再误点�
     assert.ok(code.includes('!/NAS|忘记|注册/i.test(t)'), '应排除 NAS/忘记按钮');
     assert.ok(code.includes('getClientRects'), '可见性判断应使用 getClientRects');
     assert.ok(code.includes('setInterval'), '应有轮询兜底');
+    assert.ok(code.includes('setInterval(attempt, 150)'), '轮询间隔应为 150ms（快速响应登录页加载）');
     assert.ok(code.includes('MutationObserver'), '应有 SPA 监听');
+    assert.ok(!code.includes('moTickPending'), '不应有节流延迟（即时响应）');
+    assert.ok(code.includes('attributes: true'), 'MutationObserver 应监听全部属性（含 style 切换）');
     assert.ok(code.includes('location.origin'), '应有页面侧 origin 校验（审查轮 14）');
     assert.ok(code.includes('fnos') && code.includes('5ddd') && code.includes('trzznas'), '应信任 FN Connect 官方代理域');
     // v0.1.15 修复：模板字符串中正则必须用双反斜杠，否则生成脚本 SyntaxError

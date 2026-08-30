@@ -5,8 +5,8 @@
  * 安全约定：
  * - 壳页面通过 contextBridge 暴露的受限 API（renderer/preload.js）访问；
  * - 所有来自壳页面的请求都校验发送方（必须是本应用 renderer 目录下的本地页面）；
- * - guest 网页（不可信）只能通过 guest-preload 上报歌词/播放进度/日志，
- *   且歌词上报会校验发送来源必须是已配置的服务器主机、并做长度限额；
+ * - guest 网页（不可信）只能通过 guest-preload 上报日志（fnmusic:log），
+ *   并校验发送来源必须是已配置的服务器主机、限长 500；
  * - 所有通道参数在主进程侧再次校验。
  */
 const { ipcMain, BrowserWindow, app } = require('electron');
@@ -16,7 +16,6 @@ const logger = require('./logger');
 const settings = require('./settings');
 const serverUrl = require('./server-url');
 const audioDevices = require('./audio-devices');
-const lyrics = require('./lyrics');
 const windowManager = require('./window-manager');
 const security = require('./security');
 
@@ -164,8 +163,7 @@ function register(ctx) {
     // 硬件加速变更需要重启才生效（返回给渲染层提示）
     const needsRestart = 'hardwareAcceleration' in p && p.hardwareAcceleration !== prev.hardwareAcceleration;
 
-    // 仅当「解析后的实际加载地址」发生变化时才重新加载主页（避免保存歌词透明度等
-    // 无关设置时打断播放）
+    // 仅当「解析后的实际加载地址」发生变化时才重新加载主页（避免保存音量等无关设置时打断播放）
     if ('serverUrl' in p || 'remoteUrl' in p || 'accessMode' in p) {
       const prevResolved = serverUrl.resolve(prev);
       const nextResolved = serverUrl.resolve(next);
@@ -177,13 +175,12 @@ function register(ctx) {
     if ('audioDeviceId' in p) {
       audioDevices.setDevice(windowManager.getGuestWebContents(), next.audioDeviceId);
     }
-    // 桌面歌词开关变更
-    if ('showDesktopLyrics' in p) {
-      lyrics.setEnabled(next.showDesktopLyrics);
-      notifyGuestLyricsEnabled(next.showDesktopLyrics);
+    // 用户显式更改硬件加速 → 标记（自动降级不再干预；仅值实际变化时置位，
+    // 避免"任意保存"污染标记——审查轮 M1）
+    if ('hardwareAcceleration' in p && p.hardwareAcceleration !== prev.hardwareAcceleration) {
+      settings.update({ hardwareAccelUserSet: true });
     }
-    if ('lyricsOpacity' in p) lyrics.setOpacity(next.lyricsOpacity);
-    return { ok: true, settings: next, needsRestart };
+    return { ok: true, settings: settings.getAll(), needsRestart };
   });
 
   /* ---------- 服务器 ---------- */
@@ -240,26 +237,6 @@ function register(ctx) {
     if (allowed.includes(action)) windowManager.navigate(action);
   });
 
-  /* ---------- 桌面歌词 ---------- */
-  ipcMain.handle('lyrics:set-enabled', (event, payload) => {
-    if (!isTrustedShellSender(event)) return false;
-    const enabled = Boolean(payload && payload.enabled);
-    settings.update({ showDesktopLyrics: enabled });
-    lyrics.setEnabled(enabled);
-    notifyGuestLyricsEnabled(enabled);
-    return enabled;
-  });
-
-  ipcMain.handle('lyrics:set-opacity', (event, payload) => {
-    if (!isTrustedShellSender(event)) return;
-    lyrics.setOpacity(payload && payload.value);
-  });
-
-  ipcMain.handle('lyrics:set-interactive', (event, payload) => {
-    if (!isTrustedShellSender(event)) return;
-    lyrics.setInteractive(Boolean(payload && payload.interactive));
-  });
-
   /* ---------- 数据清理（隐私） ---------- */
   ipcMain.handle('data:clear', async (event) => {
     if (!isTrustedShellSender(event)) return { ok: false, error: '拒绝访问' };
@@ -284,6 +261,20 @@ function register(ctx) {
     const result = { page: null, logTail: '', logDir: logDir || null };
     // 多 frame 聚合诊断（含 iframe；注入失败记录一并返回）
     result.page = await windowManager.diagnoseAllFrames();
+    // 登录态诊断：cookie 数量 + localStorage 占用（排查"每次重新登录"；
+    // localStorage 型登录态不受 cookie flush 保护——审查轮 M4）
+    try {
+      const cookies = await guestSession.cookies.get({});
+      result.cookieCount = cookies.length;
+    } catch { result.cookieCount = -1; }
+    if (wc && !wc.isDestroyed()) {
+      try {
+        result.localStorage = await wc.executeJavaScript(
+          '(() => { try { let n = 0, len = 0; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k) { n++; len += (k.length + String(localStorage.getItem(k) || "").length); } } return { keys: n, bytes: len }; } catch (e) { return { error: String(e && e.message || e) }; } })()',
+          true
+        );
+      } catch { result.localStorage = { error: '不可用' }; }
+    }
     // 日志尾部（脱敏后展示，审查轮 C L1/L2：抹掉 URL query/token）
     try {
       if (logDir && fs.existsSync(logDir)) {
@@ -347,20 +338,6 @@ function register(ctx) {
   });
 
   /* ---------- guest 网页上报（来源校验 + 限额） ---------- */
-  ipcMain.on('fnmusic:lyrics', (event, payload) => {
-    if (!isTrustedGuestSender(event)) return; // 仅接受来自已配置服务器主机的歌词
-    lyrics.onLyrics(payload);
-  });
-  ipcMain.on('fnmusic:audio-state', (event, payload) => {
-    if (!isTrustedGuestSender(event)) return;
-    lyrics.onAudioState(payload);
-  });
-  ipcMain.on('fnmusic:dom-lyric', (event, payload) => {
-    if (!isTrustedGuestSender(event)) return;
-    if (!payload || typeof payload.text !== 'string') return;
-    if (payload.text.length > 200) return; // 长度限额（审查轮 F3）
-    lyrics.onDomLyric(payload);
-  });
   ipcMain.on('fnmusic:log', (event, payload) => {
     if (isTrustedGuestSender(event) && typeof payload === 'string' && payload.length < 500) {
       logger.info('[网页]', payload);
@@ -375,22 +352,13 @@ function register(ctx) {
   global.__fnmusicNav = (action) => windowManager.navigate(action);
 }
 
-/** 通知 guest 网页歌词上报开关 */
-function notifyGuestLyricsEnabled(enabled) {
-  const wc = windowManager.getGuestWebContents();
-  if (wc && !wc.isDestroyed()) {
-    wc.send('fnmusic:lyrics-enabled', { enabled: Boolean(enabled) });
-  }
-}
-
-/** 页面（重新）加载后回放设置：音频设备 + 音量 + 歌词开关（刷新/重启后仍生效） */
+/** 页面（重新）加载后回放设置：音频设备 + 音量（刷新/重启后仍生效） */
 function replaySettingsToGuest() {
   const s = settings.getAll();
   const wc = windowManager.getGuestWebContents();
   if (!wc || wc.isDestroyed()) return;
   wc.send('fnmusic:set-audio-device', { deviceId: s.audioDeviceId || '' });
   wc.send('fnmusic:set-volume', { value: s.volume });
-  wc.send('fnmusic:lyrics-enabled', { enabled: Boolean(s.showDesktopLyrics) });
   // 主世界直接广播（frame 注入后立即生效）
   audioDevices.broadcastToAllFrames(
     wc,

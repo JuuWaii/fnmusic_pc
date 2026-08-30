@@ -37,6 +37,7 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: FNMusicPC
+  deleteAppDataOnUninstall: true   # 卸载时清理用户数据（登录凭据/设置，避免残留）
 
 # 国内网络可设置镜像加速 Electron 下载：
 #   $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
@@ -45,3 +46,5 @@ npmRebuild: false
 # Electron 二进制下载缓存目录（重定向到项目内，兼容受限环境/CI）
 electronDownload:
   cache: .electron-cache
+# 卸载时清理用户数据（登录凭据/设置，避免残留）
+  deleteAppDataOnUninstall: true

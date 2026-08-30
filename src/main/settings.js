@@ -20,12 +20,11 @@ const DEFAULTS = Object.freeze({
   accessMode: 'auto',       // auto=优先本地失败切远程 | local=仅本地 | remote=仅远程
   audioDeviceId: '',        // 音频输出设备 id，'' = 跟随系统默认设备
   ignoreCertErrors: false,  // 是否忽略证书错误（FN Connect 隧道证书异常时按需开启，默认关闭）
-  showDesktopLyrics: false, // 桌面歌词开关（可选功能）
-  lyricsOpacity: 0.9,       // 桌面歌词窗口不透明度 0.3~1
   musicPath: '/music',      // 音乐入口路径：地址路径为空时自动追加（置空则不加）
   minimizeToTray: true,    // 关闭主窗口时最小化到系统托盘（后台继续播放）
   volume: 1,                // 客户端音量（0~1，作用于网页播放器输出）
-  hardwareAcceleration: true, // 硬件加速（需重启生效；关闭可解决部分显卡/远程桌面黑屏）
+  hardwareAcceleration: true,  // 硬件加速（需重启生效；关闭可解决部分显卡/远程桌面黑屏）
+  hardwareAccelUserSet: false, // 用户是否显式设置过硬件加速（自动降级不再干预）
 });
 
 /**

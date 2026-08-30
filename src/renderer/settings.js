@@ -31,9 +31,6 @@ function showTest(ok, text) {
   $('remoteUrl').value = current.remoteUrl || '';
   $('accessMode').value = current.accessMode || 'auto';
   $('musicPath').value = current.musicPath || '';
-  $('lyricsEnabled').checked = Boolean(current.showDesktopLyrics);
-  $('lyricsOpacity').value = current.lyricsOpacity ?? 0.9;
-  $('opacityValue').textContent = current.lyricsOpacity ?? 0.9;
   $('ignoreCertErrors').checked = Boolean(current.ignoreCertErrors);
   $('minimizeToTray').checked = Boolean(current.minimizeToTray);
   $('hardwareAcceleration').checked = current.hardwareAcceleration !== false;
@@ -43,8 +40,7 @@ function showTest(ok, text) {
     $('pageTitle').textContent = '欢迎使用 FN Music PC';
     $('pageSub').textContent = '填写飞牛音乐服务器地址即可开始（可随时在设置中修改）';
     $('sectionAdvanced').style.display = 'none';
-    document.querySelector('section:nth-of-type(3)').style.display = 'none'; // 桌面歌词
-    document.querySelector('section:nth-of-type(4)').style.display = 'none'; // 高级
+    document.querySelector('section:nth-of-type(3)').style.display = 'none'; // 高级
     $('btnSave').textContent = '开始使用';
   }
 
@@ -106,11 +102,6 @@ $('btnDiag').addEventListener('click', async () => {
   pre.textContent = JSON.stringify(r, null, 2);
 });
 
-/* ---------- 桌面歌词 ---------- */
-$('lyricsOpacity').addEventListener('input', () => {
-  $('opacityValue').textContent = $('lyricsOpacity').value;
-});
-
 /* ---------- 保存 / 默认 ---------- */
 $('btnSave').addEventListener('click', async () => {
   const patch = {
@@ -118,8 +109,6 @@ $('btnSave').addEventListener('click', async () => {
     remoteUrl: $('remoteUrl').value.trim(),
     musicPath: $('musicPath').value.trim(),
     accessMode: $('accessMode').value,
-    showDesktopLyrics: $('lyricsEnabled').checked,
-    lyricsOpacity: Number($('lyricsOpacity').value),
     ignoreCertErrors: $('ignoreCertErrors').checked,
     minimizeToTray: $('minimizeToTray').checked,
     hardwareAcceleration: $('hardwareAcceleration').checked,
@@ -151,7 +140,6 @@ $('btnDefaults').addEventListener('click', async () => {
   await api.saveSettings({
     serverUrl: '', remoteUrl: '', musicPath: '/music', accessMode: 'auto',
     audioDeviceId: '', ignoreCertErrors: false, minimizeToTray: true, hardwareAcceleration: true,
-    showDesktopLyrics: false, lyricsOpacity: 0.9,
   });
   location.reload();
 });

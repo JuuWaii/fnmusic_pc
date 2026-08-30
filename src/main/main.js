@@ -9,16 +9,46 @@
  * 3. FN Connect：设置中可配置官方远程访问地址，auto 模式本地失败自动回退
  *    （需求 2）；
  * 4. 音频输出设备：运行时注入 setSinkId 定向输出（需求 4）；
- * 5. 桌面歌词：捕获网页接口歌词数据驱动悬浮窗（需求 6，可选）；
+ * 5. （桌面歌词功能已按用户要求移除，v0.1.6 起不再提供）；
  * 6. 不收集任何用户数据；不包含任何个人信息（需求 8）。
  */
 const { app, session } = require('electron');
+const fs = require('fs');
 const path = require('path');
+
+// 【登录态保障】固定 userData 路径：安装版/便携版/开发版统一使用
+// %APPDATA%\FNMusicPC。便携版若不固定，数据会随 exe 位置/版本移动而丢失，
+// 表现为"每次打开都要重新登录"。
+// 注意：必须位于任何 getPath('userData') 调用（含 readPreReadyConfig 硬件加速
+// 决策）之前——审查轮 H2：此前顺序错误导致固定路径下硬件加速关闭永不生效。
+try {
+  app.setPath('userData', path.join(app.getPath('appData'), 'FNMusicPC'));
+} catch (e) {
+  console.error('设置 userData 路径失败:', e && e.message);
+}
+
+// H1：旧数据迁移（v0.1.5 及以前默认 %APPDATA%\fnmusic-pc → 新固定路径）。
+// 首次启动检测旧目录存在而新目录为空时，迁移 settings.json 与登录态分区，
+// 避免升级后"重新配置 + 重新登录"。
+try {
+  const oldDir = path.join(app.getPath('appData'), 'fnmusic-pc');
+  const newDir = path.join(app.getPath('appData'), 'FNMusicPC');
+  if (fs.existsSync(oldDir) && fs.existsSync(newDir)) {
+    const onlyEmpty = fs.readdirSync(newDir).length === 0;
+    if (onlyEmpty) {
+      for (const item of ['settings.json', 'Partitions']) {
+        const src = path.join(oldDir, item);
+        if (fs.existsSync(src)) {
+          try { fs.renameSync(src, path.join(newDir, item)); } catch { /* 单文件失败不阻塞 */ }
+        }
+      }
+    }
+  }
+} catch { /* 迁移失败不阻塞启动 */ }
 const logger = require('./logger');
 const settings = require('./settings');
 const security = require('./security');
 const windowManager = require('./window-manager');
-const lyrics = require('./lyrics');
 const audioDevices = require('./audio-devices');
 const ipc = require('./ipc');
 const menu = require('./menu');
@@ -84,6 +114,19 @@ if (!gotLock) {
 function bootstrap() {
   settings.load();
   logger.info('FN Music PC 启动 v' + app.getVersion(), 'platform=' + process.platform);
+  // 登录态诊断：userData 路径、persist 分区 Cookie 文件、settings 状态
+  // （登录态实际存储在 Partitions/fnmusic-guest/Cookies，审查轮 M3 修正路径；
+  //   路径做脱敏，避免日志分享时泄露用户名——审查轮 L1）
+  try {
+    const home = app.getPath('home');
+    const sanitized = (p) => (home ? String(p).replace(home, '%USERPROFILE%') : String(p));
+    const cookiePath = path.join(app.getPath('userData'), 'Partitions', 'fnmusic-guest', 'Cookies');
+    logger.info('userData 路径:', sanitized(app.getPath('userData')));
+    logger.info('登录态 Cookie 文件:', fs.existsSync(cookiePath) ? (fs.statSync(cookiePath).size + ' bytes') : '不存在');
+    logger.info('settings.json:', fs.existsSync(path.join(app.getPath('userData'), 'settings.json')) ? '存在' : '不存在');
+  } catch (e) {
+    logger.warn('登录态诊断失败:', e.message);
+  }
 
   // guest 会话：独立持久分区（登录态保存在 userData 下）
   const guestSession = session.fromPartition(windowManager.GUEST_PARTITION);
@@ -105,9 +148,37 @@ function bootstrap() {
   const cookieFlushTimer = setInterval(() => {
     guestSession.cookies.flushStore().catch(() => {});
   }, 60000);
+  // 渲染异常自动降级：主窗口 ready-to-show 超时（黑屏）时触发。
+  // 仅当用户未显式设置过硬件加速时自动关闭（软件渲染，重启生效）并弹窗提示；
+  // 用户显式配置过硬件加速后不再自动干预（尊重用户选择）。
+  global.__fnmusicRenderFallback = () => {
+    try {
+      const s = settings.getAll();
+      if (s.hardwareAcceleration && !s.hardwareAccelUserSet) {
+        settings.update({ hardwareAcceleration: false });
+        logger.warn('检测到渲染异常：已自动切换为软件渲染（重启客户端后生效）');
+        const { dialog } = require('electron');
+        dialog.showMessageBox({
+          type: 'warning',
+          title: '显示异常',
+          message: '检测到窗口渲染异常（可能是显卡/驱动兼容性问题），已自动切换为软件渲染。',
+          detail: '需要重启客户端后生效。是否立即重启？',
+          buttons: ['立即重启', '稍后'],
+          defaultId: 0,
+        }).then(({ response }) => {
+          if (response === 0) {
+            app.relaunch();
+            app.exit(0);
+          }
+        }).catch(() => {});
+      }
+    } catch (e) {
+      logger.warn('自动降级失败:', e.message);
+    }
+  };
+
   app.on('before-quit', () => {
     global.__fnmusicQuit = true; // 允许主窗口 close 真正生效
-    lyrics.dispose();
     guestSession.cookies.flushStore().catch(() => {});
   });
   app.on('will-quit', () => {

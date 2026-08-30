@@ -26,11 +26,6 @@ const api = {
   /* ---- 导航 ---- */
   navigate: (action) => ipcRenderer.invoke('nav:action', action),
 
-  /* ---- 桌面歌词 ---- */
-  setLyricsEnabled: (enabled) => ipcRenderer.invoke('lyrics:set-enabled', { enabled }),
-  setLyricsOpacity: (value) => ipcRenderer.invoke('lyrics:set-opacity', { value }),
-  setLyricsInteractive: (interactive) => ipcRenderer.invoke('lyrics:set-interactive', { interactive }),
-
   /* ---- 数据清理 ---- */
   clearData: () => ipcRenderer.invoke('data:clear'),
 

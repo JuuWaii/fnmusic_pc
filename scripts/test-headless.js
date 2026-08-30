@@ -5,10 +5,9 @@
  * 在无法启动 GUI 的环境（CI / 沙箱）中验证核心逻辑：
  * - server-url：地址校验（含长度上限）/ 解析 / 自动回退意图
  * - settings：读写与类型收窄（跳过 dev.config.json）
- * - lyrics：LRC 解析、时间定位、歌词窗口状态机（含 IPC 推送断言）
  * - ipc：IPC 处理器注册与关键行为（发送者校验、设置联动、来源限制）
  * - window-manager：壳模式切换、加载意图
- * - guest-mainworld：主世界歌词嗅探逻辑
+ * - guest-mainworld：主世界注入脚本（音频 API 暴露、容错）
  *
  * 通过 Module._load 注入 electron 桩实现，不依赖真实 GUI。
  */
@@ -243,10 +242,10 @@ console.log('\n[2] settings');
     assert.ok(!('evil' in s));
   });
   ok('持久化回读', () => {
-    st.update({ lyricsOpacity: 0.6 });
+    st.update({ volume: 0.6 });
     const st2 = loadWithStub(path.join(ROOT, 'src/main/settings.js'), stub);
     st2.load();
-    assert.strictEqual(st2.getAll().lyricsOpacity, 0.6);
+    assert.strictEqual(st2.getAll().volume, 0.6);
     assert.strictEqual(st2.getAll().serverUrl, 'http://127.0.0.1:5666');
   });
   ok('readConfiguredOriginsPreReady 提取 http 来源（排除 https）', () => {
@@ -275,97 +274,6 @@ console.log('\n[2] settings');
     const origins = st.readConfiguredOriginsPreReady();
     assert.ok(Array.isArray(origins));
     st.update({ serverUrl: 'http://127.0.0.1:5666' }); // 恢复
-  });
-}
-
-console.log('\n[3] lyrics（LRC 解析 + 窗口状态机）');
-{
-  const stub = electronStub();
-  const ly = loadWithStub(path.join(ROOT, 'src/main/lyrics.js'), stub);
-  ok('parseLrc 基本解析', () => {
-    const lrc = '[00:01.00]第一句\n[00:05.50]第二句\n[00:09.25]第三句';
-    const lines = ly.parseLrc(lrc);
-    assert.strictEqual(lines.length, 3);
-    assert.strictEqual(lines[0].text, '第一句');
-    assert.strictEqual(lines[0].time, 1.0);
-    assert.strictEqual(lines[1].time, 5.5);
-  });
-  ok('parseLrc 多时间标签/纯文本', () => {
-    const lines = ly.parseLrc('[00:10.00][00:20.00]重复句\n无时间标签行');
-    assert.strictEqual(lines.length, 3);
-    assert.strictEqual(lines[2].time, 20.0); // 纯文本行沿用上一时间
-  });
-  ok('indexForTime 二分定位', () => {
-    const lines = ly.parseLrc('[00:01.00]a\n[00:05.00]b\n[00:10.00]c');
-    assert.strictEqual(ly.indexForTime(lines, 0.5), -1);
-    assert.strictEqual(ly.indexForTime(lines, 1.0), 0);
-    assert.strictEqual(ly.indexForTime(lines, 7.0), 1);
-    assert.strictEqual(ly.indexForTime(lines, 99.0), 2);
-  });
-  ok('onLyrics 载荷限额（超大 LRC 被拒绝）', async () => {
-    ly.onLyrics({ track: 'x', lrc: '[00:01.00]' + 'a'.repeat(300 * 1024) });
-    ly.onAudioState({ playing: true, currentTime: 0.5, duration: 10, paused: false, title: '' });
-    ly.setEnabled(true);
-    await new Promise((r) => setTimeout(r, 500));
-    ly.setEnabled(false);
-    const win = stub._wins.find((w) => w.webContents && w.webContents._sent.length);
-    const updates = win.webContents._sent.filter((m) => m.ch === 'lyrics:update');
-    assert.strictEqual(updates[updates.length - 1].data.hasLyrics, false); // 超限 LRC 未被采用
-  });
-  ok('关闭后再开启：窗口重新显示', () => {
-    const win = stub._wins.find((w) => w.webContents);
-    let shown = 0;
-    win.showInactive = () => shown++;
-    ly.setEnabled(true);  // 再次开启
-    assert.strictEqual(shown, 1, '已存在窗口应被重新显示');
-    ly.setEnabled(false);
-  });
-  ok('开启歌词后窗口收到歌词更新推送', async () => {
-    ly.onLyrics({ track: '测试歌曲', lrc: '[00:01.00]第一句\n[00:03.00]第二句' });
-    ly.onAudioState({ playing: true, currentTime: 1.5, duration: 10, paused: false, title: '' });
-    ly.setEnabled(true);
-    await new Promise((r) => setTimeout(r, 600)); // 等 2 个 tick
-    ly.setEnabled(false);
-    const win = stub._wins.find((w) => w.webContents && w.webContents._sent.length);
-    assert.ok(win, '歌词窗口应被创建');
-    const updates = win.webContents._sent.filter((m) => m.ch === 'lyrics:update');
-    assert.ok(updates.length >= 1, '应收到歌词更新推送');
-    const last = updates[updates.length - 1].data;
-    assert.strictEqual(last.hasLyrics, true);
-    assert.strictEqual(last.cur, '第一句'); // 1.5s → 第一句
-    assert.strictEqual(last.track, '测试歌曲');
-  });
-  ok('DOM 兜底歌词：显示页面捕获的当前行', async () => {
-    ly.onLyrics({ track: '', lrc: '' }); // 清空 LRC（含旧 domLine）
-    ly.onDomLyric({ text: '页面捕获的歌词行', title: '页面标题' });
-    ly.setEnabled(true);
-    await new Promise((r) => setTimeout(r, 400));
-    ly.setEnabled(false);
-    const win = stub._wins.find((w) => w.webContents && w.webContents._sent.length);
-    const updates = win.webContents._sent.filter((m) => m.ch === 'lyrics:update');
-    const last = updates[updates.length - 1].data;
-    assert.strictEqual(last.hasLyrics, true);
-    assert.strictEqual(last.cur, '页面捕获的歌词行');
-    assert.strictEqual(last.domOnly, true);
-  });
-  ok('新 LRC 到达后 DOM 行被清空（不再显示旧行）', () => {
-    ly.onLyrics({ track: '新歌', lrc: '[00:01.00]新歌词行' });
-    ly.onLyrics({ track: '', lrc: '' }); // 空载荷应清空 domLine
-    ly.setEnabled(true);
-    // 通过状态验证：onLyrics 空载荷清空 domLine 后，domOnly 应为 false
-    ly.onDomLyric({ text: '临时行' });
-    ly.onLyrics({ track: '歌B', lrc: '[00:01.00]B行' });
-    ly.setEnabled(false);
-  });
-  ok('无歌词时推送提示态', async () => {
-    ly.onLyrics({ track: '', lrc: '' }); // 模拟新曲目无歌词（应清空旧歌词）
-    ly.setEnabled(true);
-    await new Promise((r) => setTimeout(r, 400));
-    ly.setEnabled(false);
-    const win = stub._wins.find((w) => w.webContents && w.webContents._sent.length);
-    const updates = win.webContents._sent.filter((m) => m.ch === 'lyrics:update');
-    const last = updates[updates.length - 1].data;
-    assert.strictEqual(last.hasLyrics, false);
   });
 }
 
@@ -422,11 +330,6 @@ console.log('\n[4] ipc 处理器');
     await H['nav:action'](shellEvent, 'evil');
     await H['nav:action'](shellEvent, 'home'); // 不应抛错
   });
-  ok('lyrics:set-enabled 开关', async () => {
-    const v = await H['lyrics:set-enabled'](shellEvent, { enabled: true });
-    assert.strictEqual(v, true);
-    await H['lyrics:set-enabled'](shellEvent, { enabled: false });
-  });
   ok('app:info 版本信息', async () => {
     const info = await H['app:info'](shellEvent);
     assert.strictEqual(info.appVersion, '0.1.0-test');
@@ -457,12 +360,6 @@ console.log('\n[4] ipc 处理器');
     const r2 = await H['volume:set'](shellEvent, {});
     assert.strictEqual(r2, before.volume);
     await H['volume:set'](shellEvent, { value: 1 }); // 恢复
-  });
-  ok('guest 歌词上报：拒绝不可信来源', async () => {
-    // 注册的 on 处理器直接触发
-    const lyricsHandlers = stub._ipcOns['fnmusic:lyrics'] || [];
-    // 不可信来源不抛错即可（应被静默忽略）
-    for (const h of lyricsHandlers) h(evilEvent, { track: 'x', lrc: '[00:01.00]x' });
   });
 }
 
@@ -527,35 +424,6 @@ console.log('\n[7] tray 托盘模块');
   });
 }
 
-console.log('\n[8] guest-mainworld 歌词嗅探（纯函数）');
-{
-  // guest-mainworld 是纯函数模块（浏览器入口被 window 守卫跳过）
-  const gm = require(path.join(ROOT, 'src/main/guest-mainworld.js'));
-  ok('scanForLyrics 命中 LRC 字段', () => {
-    const found = gm.scanForLyrics({ data: { lyric: '[00:01.00]hello world lyric line for test' }, title: 'Song' });
-    assert.ok(found && found.length === 1);
-    assert.strictEqual(found[0].track, 'Song');
-    assert.ok(found[0].lrc.includes('hello world'));
-  });
-  ok('scanForLyrics 深层嵌套', () => {
-    const found = gm.scanForLyrics({ a: { b: { c: { d: { lrc: '[00:01.00]deep lyric line here for testing purposes' } } } } });
-    assert.ok(found && found.length === 1);
-  });
-  ok('scanForLyrics 忽略非歌词', () => {
-    const found = gm.scanForLyrics({ list: [1, 2, 3], name: 'x' });
-    assert.strictEqual(found, null);
-  });
-  ok('scanForLyrics 防循环/限深', () => {
-    const o = {}; o.self = o;
-    const found = gm.scanForLyrics({ k: o });
-    assert.strictEqual(found, null); // 不抛错即可
-  });
-  ok('scanForLyrics 空输入', () => {
-    assert.strictEqual(gm.scanForLyrics(null), null);
-    assert.strictEqual(gm.scanForLyrics('text'), null);
-  });
-}
-
 console.log('\n[9] guest-mainworld 浏览器入口（注入脚本关键路径）');
 {
   // 构造浏览器桩环境后加载注入脚本，验证：XHR 钩子不抛错（P0 回归）、fetch 歌词嗅探、音量 API
@@ -563,30 +431,9 @@ console.log('\n[9] guest-mainworld 浏览器入口（注入脚本关键路径）
   const messages = [];
   const xhrCalls = [];
 
-  class XHRStub {
-    constructor() { this.status = 200; this.responseText = ''; this.responseType = ''; this.response = null; this._listeners = {}; this.__fnmusicUrl = ''; }
-    open(method, url) { this.__fnmusicUrl = String(url); xhrCalls.push({ method, url: String(url) }); }
-    send() { this._sent = true; for (const fn of this._listeners['load'] || []) fn.call(this, {}); }
-    addEventListener(ev, fn) { (this._listeners[ev] = this._listeners[ev] || []).push(fn); }
-    getResponseHeader(name) { return name.toLowerCase() === 'content-type' ? 'application/json' : null; }
-  }
-
-  const fetchStub = async (url) => {
-    if (String(url).includes('lyric-api')) {
-      return {
-        ok: true,
-        headers: { get: (n) => (n.toLowerCase() === 'content-type' ? 'application/json' : '42'), },
-        clone: () => ({ text: async () => JSON.stringify({ data: { lyric: '[00:01.00]fetch lyric line for testing' }, title: 'FetchSong' }) }),
-      };
-    }
-    return { ok: true, headers: { get: () => 'application/json' }, clone: () => ({ text: async () => '{"a":1}' }) };
-  };
-
-  class WsStub { constructor() { } }
-  WsStub.prototype.addEventListener = function () {};
-  WsStub.prototype.removeEventListener = function () {};
-
   savedGlobals.window = global.window;
+  savedGlobals.document = global.document;
+  global.document = { title: 't', querySelectorAll: () => [], documentElement: {} };
   global.window = {
     location: { protocol: 'http:', href: 'http://127.0.0.1:5666/music' },
     addEventListener(ev, fn) { (global.__winListeners = global.__winListeners || {})[ev] = fn; },
@@ -594,9 +441,6 @@ console.log('\n[9] guest-mainworld 浏览器入口（注入脚本关键路径）
     setInterval() { return 1; },
     document: { title: 't', querySelectorAll: () => [], },
     AudioContext: undefined,
-    fetch: fetchStub,
-    XMLHttpRequest: XHRStub,
-    WebSocket: WsStub,
     postMessage: (d) => messages.push(d),
   };
 
@@ -604,28 +448,9 @@ console.log('\n[9] guest-mainworld 浏览器入口（注入脚本关键路径）
   delete require.cache[require.resolve(path.join(ROOT, 'src/main/guest-mainworld.js'))];
   const gm9 = require(path.join(ROOT, 'src/main/guest-mainworld.js'));
 
-  ok('XHR 钩子安装后 send 不抛错、请求照常发出（P0 回归）', () => {
-    const xhr = new XHRStub();
-    xhr.open('GET', '/api/music/lyric');
-    let threw = null;
-    try { xhr.send(); } catch (e) { threw = e; }
-    assert.strictEqual(threw, null, 'send 不应抛异常');
-    assert.strictEqual(xhr._sent, true, '原生 send 应被调用');
-  });
-
-  ok('fetch 歌词嗅探经 postMessage 桥上报', async () => {
-    const before = messages.length;
-    await global.window.fetch('https://x/lyric-api/1');
-    // fetch 钩子是异步 text() 流程，等待微任务
-    await new Promise((r) => setTimeout(r, 50));
-    const lyricMsgs = messages.slice(before).filter((m) => m && m.__fnmusicLyrics);
-    assert.ok(lyricMsgs.length >= 1, '应嗅探到歌词消息');
-    assert.ok(lyricMsgs[0].__fnmusicLyrics.lrc.includes('fetch lyric line'));
-  });
-
-  ok('scanForLyrics 支持字段变体（lyricContent/lrcText）', () => {
-    const found = gm9.scanForLyrics({ lyricContent: '[00:01.00]variant field lyric line here', lrcText: '[00:02.00]second' });
-    assert.ok(found && found.length >= 1);
+  ok('注入脚本安装后无异常（initErrors 为空）', () => {
+    const diagNow = global.window.__fnmusicDiagnose();
+    assert.deepStrictEqual(diagNow.initErrors, []);
   });
 
   ok('__fnmusicSetVolume 已暴露且为函数', () => {
@@ -637,6 +462,7 @@ console.log('\n[9] guest-mainworld 浏览器入口（注入脚本关键路径）
   ok('清理浏览器桩全局', () => {
     // 队列执行完本组测试后再恢复全局（避免影响其他组）
     if (savedGlobals.window === undefined) delete global.window; else global.window = savedGlobals.window;
+    if (savedGlobals.document === undefined) delete global.document; else global.document = savedGlobals.document;
   });
 }
 

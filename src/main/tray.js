@@ -4,15 +4,14 @@
  *
  * 功能：
  * - 托盘图标：左键单击 显示/隐藏 主窗口；
- * - 托盘菜单：显示/隐藏、设置、桌面歌词开关、退出；
+ * - 托盘菜单：显示/隐藏、设置、退出；
  * - 主窗口关闭按钮（X）在「关闭时最小化到托盘」开启时，隐藏到托盘继续后台播放；
- * - 托盘「退出」才真正结束进程（并同步销毁歌词窗口，避免僵尸进程）。
+ * - 托盘「退出」才真正结束进程。
  */
 const { Tray, Menu, nativeImage, app } = require('electron');
 const path = require('path');
 const logger = require('./logger');
 const settings = require('./settings');
-const lyrics = require('./lyrics');
 
 let tray = null;
 let getMainWindow = null;
@@ -70,10 +69,9 @@ function toggleMainWindow() {
   }
 }
 
-/** 重建托盘菜单（歌词开关状态随设置变化） */
+/** 重建托盘菜单 */
 function rebuildMenu() {
   if (!tray) return;
-  const lyricsOn = Boolean(settings.getAll().showDesktopLyrics);
   const menu = Menu.buildFromTemplate([
     {
       label: '显示主窗口',
@@ -91,15 +89,6 @@ function rebuildMenu() {
       label: '设置…',
       click: () => {
         if (global.__fnmusicOpenSettings) global.__fnmusicOpenSettings();
-      },
-    },
-    {
-      label: lyricsOn ? '关闭桌面歌词' : '开启桌面歌词',
-      click: () => {
-        const on = !lyricsOn;
-        settings.update({ showDesktopLyrics: on });
-        lyrics.setEnabled(on);
-        rebuildMenu();
       },
     },
     { type: 'separator' },

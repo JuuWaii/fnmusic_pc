@@ -31,13 +31,6 @@
    处理 Chromium 对运行中上下文切换不生效的限制），并广播到全部 frame；
 3. 配合 MutationObserver + 周期扫描，兼容 SPA 动态创建播放器的场景。
 
-## 4. 桌面歌词管线（可选功能）
-
-1. 主世界注入脚本（guest-mainworld.js）钩住 fetch / XMLHttpRequest / WebSocket，对 JSON 响应与消息全量嗅探 LRC 歌词字段（含字段变体，带大小预算）；
-2. 歌词经 window.postMessage 交给隔离世界 preload（guest-preload.js）转发主进程 lyrics.js，解析为时间轴行（mm:ss.xx）；
-3. 播放进度双源：媒体元素由 guest-preload 每秒上报；纯 WebAudio 播放器（无元素）由主世界脚本按 AudioContext.currentTime 上报；lyrics.js 每 250ms 二分定位当前行并推送给歌词悬浮窗；
-4. 歌词窗口：无边框、置顶、可拖动、可点击穿透，数据仅存内存，不落盘。
-
 ## 5. 安全模型
 
 - 壳页面与歌词窗口：sandbox + contextIsolation，仅暴露白名单 API（preload.js）；

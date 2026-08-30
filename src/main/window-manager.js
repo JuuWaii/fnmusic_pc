@@ -24,7 +24,6 @@ const logger = require('./logger');
 const settings = require('./settings');
 const serverUrl = require('./server-url');
 const security = require('./security');
-const lyrics = require('./lyrics');
 
 /** 工具栏高度（与 titleBarOverlay 高度保持一致） */
 const TOOLBAR_HEIGHT = 44;
@@ -109,7 +108,7 @@ function createMainWindow() {
 
   // 关闭按钮（X）行为：
   // - 「关闭时最小化到托盘」开启：隐藏到托盘，网页继续后台播放；
-  // - 关闭该选项或托盘「退出」：真正退出应用（含歌词窗，避免僵尸进程）。
+  // - 关闭该选项或托盘「退出」：真正退出应用。
   mainWindow.on('close', (e) => {
     if (!global.__fnmusicQuit && settings.getAll().minimizeToTray) {
       e.preventDefault();
@@ -132,11 +131,21 @@ function createMainWindow() {
   // 渲染就绪后再显示；若 GPU/渲染异常导致 ready-to-show 迟迟不触发，
   // 5 秒后强制显示窗口（黑屏问题兜底），并记录日志便于排查。
   readyTimer = setTimeout(() => {
-    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
-      logger.warn('ready-to-show 超时（5s），强制显示窗口——疑似渲染异常');
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (!mainWindow.isVisible()) {
+      // 壳页面仍在加载（冷启动/杀软扫描/慢盘）时不判定渲染异常——审查轮 M2
+      if (mainWindow.webContents.isLoading()) {
+        logger.warn('ready-to-show 超时（10s），壳页面仍在加载，暂不判定渲染异常');
+      } else {
+        logger.warn('ready-to-show 超时（10s），强制显示窗口——疑似渲染异常');
+        // 黑屏自愈：触发渲染异常自动降级（未显式配置时自动切软件渲染）
+        if (global.__fnmusicRenderFallback) {
+          try { global.__fnmusicRenderFallback(); } catch { /* 忽略 */ }
+        }
+      }
       mainWindow.show();
     }
-  }, 5000);
+  }, 10000);
   mainWindow.once('ready-to-show', () => {
     clearTimeout(readyTimer);
     mainWindow.show();
@@ -180,7 +189,7 @@ function createGuestView() {
     if (!/^https?:/.test(url)) e.preventDefault();
   });
 
-  // 主世界注入（AudioContext 定向 / 歌词捕获）
+  // 主世界注入（AudioContext 定向 / 音量控制）
   // 注：飞牛门户可能把应用渲染在（跨域）iframe 中，因此向主 frame 与全部子 frame 注入，
   // 并通过 frame-created 覆盖运行时动态创建的 iframe。
   wc.on('dom-ready', () => injectMainWorldIntoFrames());
@@ -279,7 +288,7 @@ function createGuestView() {
   wc.on('did-finish-load', () => {
     pushStatus();
     resolveFirstContent();
-    // 页面（重新）加载后回放设置：音频输出设备、桌面歌词开关
+    // 页面（重新）加载后回放设置：音频输出设备与音量
     for (const cb of pageLoadedCallbacks) {
       try { cb(); } catch (e) { logger.warn('页面加载回调异常:', e.message); }
     }
@@ -467,7 +476,7 @@ function pushStatus() {
 function getMainWindow() { return mainWindow; }
 function getGuestWebContents() { return guestView && !guestView.webContents.isDestroyed() ? guestView.webContents : null; }
 
-/** 注册「页面加载完成」回调（设置回放：音频设备/歌词开关） */
+/** 注册「页面加载完成」回调（设置回放：音频设备/音量） */
 function onGuestPageLoaded(cb) {
   if (typeof cb === 'function') pageLoadedCallbacks.push(cb);
 }

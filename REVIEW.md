@@ -112,3 +112,14 @@ master gain + 媒体元素双通道）、歌词捕获改进（全量 JSON 嗅探
 - WebAudio 时间轴：纯 WebAudio 播放器无媒体元素、进度恒 0——主世界按 ctx.currentTime 上报；
 - 安全：面板窗口补齐 setWindowOpenHandler；诊断 frame.url 脱敏；IPC 校验复检通过；
 - 隐私：check-privacy 通过；新增文件无敏感信息。
+
+## 审查轮 7：桌面歌词移除 + 登录态修复 + 黑屏自愈（v0.1.6）
+
+- **桌面歌词移除**：多轮尝试（JSON 嗅探/WebSocket/DOM 捕获/时间轴）无法稳定获取飞牛音乐歌词，
+  按用户授权完整移除（lyrics.js/歌词窗口/捕获钩子/IPC/UI 入口），注入脚本回归纯音频职责；
+- **登录态修复**：根因定位为便携版/多形态 userData 路径不一致（exe 移动/删除即丢数据），
+  固定 userData 为 %APPDATA%\FNMusicPC；启动日志输出 userData 路径与 Cookie 文件状态；
+  诊断接口返回 cookie 数量；保留 60s 周期 flush + 退出双 flush；
+- **黑屏自愈闭环**：ready-to-show 超时（渲染异常）时，若用户未显式配置硬件加速，
+  自动切换软件渲染并提示重启（另一台电脑安装版黑屏的针对性修复）；
+- 测试套件调整至 48 项（歌词相关用例移除，音频/登录/降级逻辑保留覆盖）。

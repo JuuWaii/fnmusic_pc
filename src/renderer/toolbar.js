@@ -37,18 +37,6 @@ $('urlPill').addEventListener('click', () => api.openSettings(false));
 /* ---------- 设置 ---------- */
 $('btnSettings').addEventListener('click', () => api.openSettings(false));
 
-/* ---------- 桌面歌词开关 ---------- */
-(async () => {
-  const s = await api.getSettings();
-  $('btnLyrics').classList.toggle('active', Boolean(s.showDesktopLyrics));
-})();
-$('btnLyrics').addEventListener('click', async () => {
-  const s = await api.getSettings();
-  const enabled = !s.showDesktopLyrics;
-  await api.setLyricsEnabled(enabled);
-  $('btnLyrics').classList.toggle('active', enabled);
-});
-
 /* ---------- 音频输出设备/音量：打开独立调节面板 ---------- */
 // 说明：设备下拉菜单会被 guest 网页视图（WebContentsView）原生图层遮挡，
 // 因此设备与音量调节收口到独立小窗（audio-panel），即选即生效。

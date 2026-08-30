@@ -148,3 +148,39 @@ master gain + 媒体元素双通道）、歌词捕获改进（全量 JSON 嗅探
 
 **真机验证建议**：全新安装 v0.1.7（或清空 settings.json 后启动）应正常显示欢迎页；
 日志应出现「壳模式切换: welcome」「壳页面开始加载/加载完成」。
+
+## 审查轮 9：三问题修复（v0.1.8/v0.1.9，三轮审查 A/B/C）
+
+**背景**：用户真机反馈三个新问题——① FN Connect 进入 NAS 桌面而非音乐；② 每次打开仍需登录；
+③ 填写欢迎页后设置界面错乱。
+
+**根因**：
+1. **FN Connect 进桌面**：用户 remoteUrl 为 `https://fnos.net/<用户名>`（带个人路径），
+   `applyMusicPath` 原逻辑「路径非空即不追加 /music」→ 进入门户桌面而非音乐页；
+2. **登录态**：main.js 诊断检查旧路径 `Partitions/fnmusic-guest/Cookies`，Electron 33+
+   （Chromium 新版）实际在 `Network/Cookies` → 日志误报「不存在」；cookie 持久化本身正常；
+3. **设置界面错乱**：设置窗口/音频面板仅 `once('ready-to-show')` 无超时兜底，渲染异常机器上
+   窗口不显示/显示异常；且欢迎页/设置页保存时默认勾选硬件加速 → 把软件渲染意外切回硬件加速
+   → 渲染异常机器黑屏/错乱，且 `hardwareAccelUserSet` 被置位导致自愈永久失效。
+
+**修复**（14ad312 + 0722968）：
+- server-url.js：applyMusicPath 改为「已以 musicPath 结尾才不重复追加，否则一律追加
+  （含带个人路径的远程地址）」；
+- main.js：Cookie 诊断新旧路径双查；
+- ipc.js：设置窗口/音频面板 5s ready-to-show 超时兜底；settings:save 联动条件补 musicPath；
+  定时器 closed 清理；
+- welcome.js / settings.js：hardwareTouched 标记——仅用户显式改动硬件加速才提交该字段
+  （防「保存任意设置」意外切回硬件加速 + userSet 置位）；
+- check-privacy.js：新增「FN Connect 个人路径段」检测（子域正则漏检路径式个人地址）；
+- 测试：51 → 55 项（FN Connect 路径 3 项 + 边界 4 项）。
+
+**审查发现与处置**（0722968）：
+- A P1：设置页同样无条件提交 hardwareAcceleration（修复不完整）→ 引入 hardwareTouched；
+- B P1（隐私红线）：测试字面量 USER_PATH（真实个人路径）入库且 check-privacy 漏检
+  → 改中性占位 user-0001 + 新增路径段检测模式；
+- A/B P2：musicPath 变更不触发 loadHome → 并入联动条件；
+- A/B P3：定时器 closed 清理、change 监听提前、UI 文案同步、边界测试补全；
+- C：通过（零 P0/P1；P2 建议 sanitizeUrl 整段清 query，留待后续）。
+
+**真机验证建议**：v0.1.9 重新配置 remoteUrl 后应直达音乐页（日志「加载飞牛音乐」含 /music）；
+日志应显示「登录态 Cookie 文件: … bytes @ …Network\Cookies」。

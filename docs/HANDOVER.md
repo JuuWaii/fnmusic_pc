@@ -46,7 +46,7 @@
 - **安全上下文**：`unsafely-treat-insecure-origin-as-secure` 标记已配置 http 来源（否则 mediaDevices 不可用）
 - **托盘**：X 关闭最小化到托盘（可关）、菜单（显示/隐藏/设置/退出）、单实例恢复窗口
 
-## 4. 版本历史（git 24 提交）
+## 4. 版本历史（git 28 提交）
 
 - **v0.1.0** 初始：网页嵌套/登录态/cookie 持久化/欢迎页/设备/歌词框架/托盘前身
 - **v0.1.1** 黑屏修复：禁用硬件加速 + ready-to-show 兜底
@@ -55,7 +55,8 @@
 - **v0.1.4** 音频面板 + 音量系统 + 歌词捕获改进（XHR P0 回归修复）
 - **v0.1.5** 硬件加速可选项 + cookie flush + 诊断容错 + DOM 歌词兜底
 - **v0.1.6** 移除桌面歌词 + 登录态修复（固定 userData/迁移）+ 黑屏自愈闭环 + 卸载清理
-- **v0.1.7**（当前）**黑屏回归修复**：welcome 模式壳页面从不加载（shellMode 初始短路）→ 初始改 null 强制加载；三轮审查处置（回归测试真覆盖/诊断作用域修复/自愈误判加固）
+- **v0.1.7** **黑屏回归修复**：welcome 模式壳页面从不加载（shellMode 初始短路）→ 初始改 null 强制加载；三轮审查处置（回归测试真覆盖/诊断作用域修复/自愈误判加固）
+- **v0.1.8/v0.1.9**（当前）**三问题修复**：FN Connect 带个人路径地址不追加 /music → 进入 NAS 桌面（applyMusicPath 改为仅 musicPath 结尾不重复追加）；登录态诊断路径修正（Electron 33 Cookie 在 Network/）；设置窗口/音频面板 ready-to-show 超时兜底 + 欢迎页/设置页硬件加速 touched 标记（防保存任意设置切回硬件加速）；三轮审查处置（隐私路径段检测/边界测试）
 
 ## 5. 关键经验教训（新会话必读，避免重复踩坑）
 
@@ -82,18 +83,18 @@
 - 真实地址只在 gitignore 的 `dev.config.json` 与 `新建 文本文档.txt`（用户任务笔记，勿动勿提交）；
 - 日志/诊断对 URL 脱敏（sanitizeUrl：剥 query/hash、token 打码）、userData 路径 %USERPROFILE% 化。
 
-## 6. 当前状态（v0.1.7，工作区干净）
+## 6. 当前状态（v0.1.9，工作区干净）
 
-- git：24 提交，HEAD = `6a366ba`（+版本号 0.1.7 待提交）；`git status` 干净
-- 测试：`npm test` → scripts/test-headless.js **48/48 通过**
-- 隐私：`npm run check:privacy` → 42 文件 0 违规
-- 产物：`dist\FNMusicPC Setup 0.1.7.exe`（安装版）、`dist\FNMusicPC 0.1.7.exe`（便携版）——构建后更新
+- git：28 提交，HEAD = `0722968`（+版本号 0.1.9 待提交）；`git status` 干净
+- 测试：`npm test` → scripts/test-headless.js **55/55 通过**
+- 隐私：`npm run check:privacy` → 42 文件 0 违规（含 FN Connect 个人路径段检测）
+- 产物：`dist\FNMusicPC Setup 0.1.9.exe`（安装版）、`dist\FNMusicPC 0.1.9.exe`（便携版）——构建后更新
 - 依赖：electron ^33.4.11、electron-builder ^26.15.3、node_modules 已装（含手动下载的 electron 二进制）
 
 ## 7. 待办与验证清单（用户真机）
 
-1. **黑屏修复验证（v0.1.7 重点）**：全新安装/清空 settings.json 后启动应正常显示欢迎页；日志应出现「壳模式切换: welcome」「壳页面开始加载/加载完成」；若仍黑屏看日志定位（不再误判渲染异常）；
-2. **登录态验证**：登录一次 → 托盘退出 → 重开免登录；看日志 `登录态 Cookie 文件` 与诊断 `cookieCount/localStorage`；
+1. **v0.1.9 三问题验证（重点）**：FN Connect 应直达音乐页（日志「加载飞牛音乐」URL 含 /music）；日志应显示「登录态 Cookie 文件: … bytes @ …Network\Cookies」；设置窗口应正常显示；
+2. **登录态验证**：登录一次 → 托盘退出 → 重开免登录；看日志 Cookie 文件与诊断 `cookieCount/localStorage`；
 3. **音频面板**：工具栏 🔊 → 设备即选即生效 + 音量联动（已确认正常，回归验证）；
 4. **欢迎页测试**：移走 dev.config.json 后启动应显示欢迎页（地址预填来自 dev.config.json）——v0.1.7 已修复该路径；
 5. **GitHub 发布（等用户授权）**：发布前替换 settings.html 关于区占位文本、确认 .npmrc 的 cache 行、跑 check-privacy + 全历史扫描；
@@ -103,7 +104,7 @@
 
 ```powershell
 cd D:\ai\DeepSeek Harness\fnmusic_pc
-npm test                 # 无头测试（48 项）
+npm test                 # 无头测试（55 项）
 npm run check:privacy    # 隐私合规检查
 npm start                # 源码启动（真机；控制台可见日志）
 npm run smoke            # 冒烟测试（真机；自动加载自检退出）

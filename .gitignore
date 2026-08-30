@@ -24,3 +24,6 @@ Thumbs.db
 
 # 本机 Chrome CDP 调试 profile（含浏览数据，严禁提交）
 .chrome-debug/
+
+# 临时调试脚本
+scripts/tmp-*

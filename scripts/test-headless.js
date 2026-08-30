@@ -291,8 +291,12 @@ console.log('\n[1b] autoLoginSnippet 按钮匹配（审查轮 12：不再误点�
     assert.ok(code.includes('location.origin'), '子 frame 应有页面侧 origin 校验（审查轮 14）');
     assert.ok(code.includes('if (!0) {'), '子 frame 应执行 origin 校验');
     const mainCode = new Function('username', 'password', 'trustedOrigins', 'isMain', m[0] + '\nreturn autoLoginSnippet;')()('u', 'p', [], true);
-    assert.ok(mainCode.includes('if (!1) {'), '主 frame 应跳过 origin 校验（信任导航链，v0.1.17）');
+    assert.ok(mainCode.includes('if (!1) {'), '主 frame 应跳过页面侧校验（信任由主进程 isMainFrameTrusted 判定）');
     assert.ok(code.includes('fnos') && code.includes('5ddd') && code.includes('trzznas'), '应信任 FN Connect 官方代理域');
+    assert.ok(code.includes('idleTicks'), '应有非登录页闲置清理（审查轮 17 C P2）');
+    assert.ok(src.includes('isMainFrameTrusted'), '主进程应有主 frame 信任判定（审查轮 17 C P1）');
+    assert.ok(src.includes('redirectChainOrigins'), '应有导航链可信 origin 集合（审查轮 17 C P1）');
+    assert.ok(src.includes('did-redirect-navigation'), '应记录可信重定向链（FN Connect 302 场景）');
     // v0.1.15 修复：模板字符串中正则必须用双反斜杠，否则生成脚本 SyntaxError
     // （生成后的脚本中正则应为单反斜杠形式 \/ 与 \.）
     assert.ok(code.includes('https:\\/\\/'), '正则 https:// 必须保留反斜杠转义');

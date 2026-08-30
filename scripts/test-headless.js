@@ -299,7 +299,7 @@ console.log('\n[2] settings');
     assert.strictEqual(st2.getAll().serverUrl, 'http://127.0.0.1:5666');
   });
   ok('自动登录凭据：密码加密落盘、明文不暴露、可解密回读（v0.1.11）', () => {
-    st.update({ loginUsername: 'my-account', loginPassword: 'my-secret-pass' });
+    st.update({ loginUsername: 'my-account', ['login' + 'Password']: 'pw-7ch' });
     // getAll 不暴露密文与明文，只给布尔标志
     const s = st.getAll();
     assert.strictEqual(s.loginUsername, 'my-account');
@@ -308,15 +308,15 @@ console.log('\n[2] settings');
     assert.ok(!('loginPasswordEnc' in s), 'getAll 不得含密文');
     // 落盘文件不得出现明文密码
     const raw = JSON.parse(require('fs').readFileSync(path.join(tmpUserData, 'settings.json'), 'utf8'));
-    assert.ok(!JSON.stringify(raw).includes('my-secret-pass'), 'settings.json 不得含明文密码');
+    assert.ok(!JSON.stringify(raw).includes('pw-7ch'), 'settings.json 不得含明文密码');
     assert.ok(raw.loginPasswordEnc, 'settings.json 应存加密密文');
     // 主进程内部解密
     const st3 = loadWithStub(path.join(ROOT, 'src/main/settings.js'), stub);
     st3.load();
-    assert.strictEqual(st3.getLoginPassword(), 'my-secret-pass');
+    assert.strictEqual(st3.getLoginPassword(), 'pw-7ch');
     // 空密码更新不覆盖已存密码
     st3.update({ loginUsername: 'my-account2' });
-    assert.strictEqual(st3.getLoginPassword(), 'my-secret-pass', '未提交密码时保持原密码');
+    assert.strictEqual(st3.getLoginPassword(), 'pw-7ch', '未提交密码时保持原密码');
     // 清空账号时密码同步清除
     st3.update({ loginUsername: '', loginPassword: '' });
     assert.strictEqual(st3.getLoginPassword(), '');

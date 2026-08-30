@@ -196,7 +196,7 @@ master gain + 媒体元素双通道）、歌词捕获改进（全量 JSON 嗅探
    mediaDevices → 枚举必然失败。安全上下文标记已生效（日志确认），remote 是 https
    天然安全——排除标记问题；
 2. **登录态**：localStorage 有 auth__remember-me=true（用户勾选记住我）、Cookie 有
-   INTRA_IP 域 token → 本地持久化机制正常；fnos.net 域无 cookie。审查 B 判断最可能
+   内网服务器域 token → 本地持久化机制正常；远程 FN Connect 域无 cookie。审查 B 判断最可能
    根因为**门户签发 session cookie（无过期时间），应用重启即丢**——persist 分区与
    flush 只能保住持久 cookie；新诊断的 session 标志可自证。
 

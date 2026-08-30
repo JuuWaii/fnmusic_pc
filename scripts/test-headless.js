@@ -271,7 +271,22 @@ console.log('\n[1] server-url');
   });
 }
 
-console.log('\n[2] settings');
+console.log('\n[1b] autoLoginSnippet 按钮匹配（审查轮 12：不再误点「使用 NAS 登录」）');
+{
+  // 从 window-manager.js 提取 findLoginBtn 的核心匹配逻辑做纯函数验证
+  const src = require('fs').readFileSync(path.join(ROOT, 'src/main/window-manager.js'), 'utf8');
+  const m = src.match(/function autoLoginSnippet\(username, password\) \{[\s\S]*?\n  \}/);
+  assert.ok(m, 'autoLoginSnippet 应存在于 window-manager.js');
+  const code = new Function('username', 'password', m[0] + '\nreturn autoLoginSnippet;')()('u', 'p');
+  // 脚本应包含 submit 优先逻辑（修复点）
+  ok('脚本优先匹配 type=submit 登录按钮（防误点「使用 NAS 登录」）', () => {
+    assert.ok(code.includes("b.type === 'submit'"), '应优先 type=submit');
+    assert.ok(code.includes('!/NAS|忘记|注册/i.test(t)'), '应排除 NAS/忘记按钮');
+    assert.ok(code.includes('getClientRects'), '可见性判断应使用 getClientRects');
+    assert.ok(code.includes('setInterval'), '应有轮询兜底');
+    assert.ok(code.includes('MutationObserver'), '应有 SPA 监听');
+  });
+}console.log('\n[2] settings');
 {
   const stub = electronStub();
   const st = loadWithStub(path.join(ROOT, 'src/main/settings.js'), stub);

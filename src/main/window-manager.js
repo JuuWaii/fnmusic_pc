@@ -248,8 +248,15 @@ function createGuestView() {
 
   /**
    * 自动登录填写脚本（注入到页面主世界执行）。
-   * 行为：查找登录表单（用户名/密码输入框）→ 填入已保存凭据 → 触发 input/change
-   * 事件（兼容 React/Vue）→ 点击登录按钮；MutationObserver 覆盖 SPA 动态表单。
+   *
+   * v0.1.12 重写（审查轮 12 A）：飞牛音乐登录页是 SPA——初始 HTML 只有
+   * #root + Loading 动画，登录表单由 JS 异步渲染。因此：
+   * - 立即尝试 + setInterval 轮询（1s） + MutationObserver 三重触发；
+   * - 总时限 60s，成功即停；
+   * - 可见性判断改用 getClientRects()（fixed/absolute 定位元素 offsetParent
+   *   为 null 会被旧逻辑误判不可见——Semi Design UI 常见）；
+   * - 用户名字段按 placeholder/name/id 匹配（账号/手机/邮箱等）；
+   * - 登录按钮匹配 textContent + aria-label。
    * 仅在页面出现密码输入框时动作；无凭据/无表单则静默退出。
    */
   function autoLoginSnippet(username, password) {
@@ -267,38 +274,76 @@ function createGuestView() {
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
       };
-      let tried = false;
+      // 可见性：getClientRects 比 offsetParent 可靠（fixed/absolute 元素）
+      const isVisible = (el) => {
+        try {
+          if (!el || el.disabled) return false;
+          const r = el.getClientRects && el.getClientRects();
+          return r && r.length > 0;
+        } catch (e) { return false; }
+      };
+      const findUserInput = () => {
+        // 优先 placeholder/name/id 含账号/手机/邮箱/用户关键词
+        const cands = Array.from(document.querySelectorAll('input')).filter((el) => {
+          if (el.type === 'password' || el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return false;
+          if (!isVisible(el)) return false;
+          const hint = ((el.name || '') + ' ' + (el.id || '') + ' ' + (el.placeholder || '')).toLowerCase();
+          return /user|account|phone|mobile|email|login|账号|用户|手机|邮箱|帐号/.test(hint);
+        });
+        if (cands.length) return cands[0];
+        // 兜底：第一个可见的非密码输入框
+        return Array.from(document.querySelectorAll('input')).find((el) => el.type !== 'password' && el.type !== 'hidden' && el.type !== 'submit' && el.type !== 'button' && isVisible(el));
+      };
+      // 审查轮 12 修复：/music/login 有「使用 NAS 登录」（primary）与「登录」
+      // （submit）两个按钮——旧正则 /登录/ 会先命中「使用 NAS 登录」导致点错。
+      // 修复：优先 type=submit（原生提交），其次精确文本「登录」并排除 NAS/忘记。
+      const findLoginBtn = () => {
+        const btns = Array.from(document.querySelectorAll('button, [role="button"], input[type="submit"]'));
+        const submitBtn = btns.find((b) => b.type === 'submit' && isVisible(b));
+        if (submitBtn) return submitBtn;
+        return btns.find((b) => {
+          const t = ((b.textContent || '') + ' ' + (b.getAttribute && b.getAttribute('aria-label') || '')).trim();
+          return /^(登录|登\s*录|登陆|立即登录|sign\s*in|log\s*in)$/i.test(t)
+            && !/NAS|忘记|注册/i.test(t)
+            && isVisible(b);
+        });
+      };
+      let done = false;
       const tryFill = () => {
-        if (tried) return false;
-        const userSel = ['input[type="text"]', 'input[type="email"]', 'input:not([type])', 'input[name*="user" i]', 'input[name*="account" i]', 'input[name*="name" i]', 'input[id*="user" i]', 'input[id*="account" i]'];
-        const passEls = Array.from(document.querySelectorAll('input[type="password"]'));
+        if (done) return true;
+        const passEls = Array.from(document.querySelectorAll('input[type="password"]')).filter(isVisible);
         if (!passEls.length) return false;
-        let userEl = null;
-        for (const sel of userSel) {
-          const els = Array.from(document.querySelectorAll(sel));
-          const hit = els.find((el) => el.offsetParent !== null && !el.value);
-          if (hit) { userEl = hit; break; }
-        }
-        if (!userEl) userEl = Array.from(document.querySelectorAll('input')).find((el) => el.offsetParent !== null && !el.value && /user|account|name/i.test((el.name || '') + (el.id || '')));
-        const passEl = passEls.find((el) => el.offsetParent !== null && !el.value);
+        const userEl = findUserInput();
+        const passEl = passEls[0];
         if (!userEl || !passEl) return false;
-        tried = true;
+        // 已填过且值一致 → 直接提交
+        if (userEl.value === creds.username && passEl.value === creds.password) {
+          done = true;
+          const btn = findLoginBtn();
+          if (btn) setTimeout(() => { try { btn.click(); } catch (e) {} }, 200);
+          return true;
+        }
         setVal(userEl, creds.username);
         setVal(passEl, creds.password);
-        // 点击登录按钮（常见文案）
-        const btn = Array.from(document.querySelectorAll('button')).find((b) => {
-          const t = (b.textContent || '').trim();
-          return /登录|登 录|登陆|sign\s*in|log\s*in|submit/i.test(t) && b.offsetParent !== null;
-        }) || Array.from(document.querySelectorAll('input[type="submit"]')).find((b) => b.offsetParent !== null);
+        done = true;
+        const btn = findLoginBtn();
         if (btn) setTimeout(() => { try { btn.click(); } catch (e) {} }, 300);
         return true;
       };
-      // 立即尝试 + SPA 动态表单兜底
-      if (!tryFill()) {
-        const mo = new MutationObserver(() => { if (tryFill()) mo.disconnect(); });
+      // 三重触发：立即 + 1s 轮询 + MutationObserver（SPA 异步渲染登录表单）
+      let tries = 0;
+      const stop = () => { clearInterval(timer); if (mo) mo.disconnect(); };
+      const attempt = () => {
+        tries++;
+        if (tryFill() || tries > 60) stop(); // 60s 上限
+      };
+      const timer = setInterval(attempt, 1000);
+      let mo = null;
+      try {
+        mo = new MutationObserver(() => attempt());
         mo.observe(document.documentElement, { childList: true, subtree: true });
-        setTimeout(() => mo.disconnect(), 20000);
-      }
+      } catch (e) { mo = null; }
+      attempt();
     })()`;
   }
 

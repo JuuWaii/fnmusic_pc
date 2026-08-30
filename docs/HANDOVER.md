@@ -1,0 +1,118 @@
+# FN Music PC 项目交接文档（HANDOVER）
+
+> 生成时间：2026-08-30（v0.1.6 完成后）
+> 用途：将本项目全部上下文、经验与当前状态迁移到新会话/新对话，新会话应首先阅读本文件与 README.md / REVIEW.md / docs/ARCHITECTURE.md。
+
+---
+
+## 1. 项目一句话
+
+**fnmusic_pc**：飞牛音乐（fnOS Music）网页的 Electron PC 客户端——网页嵌套播放、登录态保持、FN Connect 远程访问、音频输出设备与音量调节、系统托盘后台运行。
+
+- 工作目录：`D:\ai\DeepSeek Harness\fnmusic_pc`
+- 飞牛服务（用户内网）：`http://INTRA_IP:5666`，**音乐实际入口 = 门户根地址 + /music**
+- 用户机器：Windows 11（build 26200）；另有第二台电脑用于安装版测试（该机 GPU 渲染异常会黑屏）
+
+## 2. 原始需求（10 条，全部落地）
+
+| # | 需求 | 实现要点 |
+|---|------|----------|
+| 1 | 登录信息持久化免重复登录 | persist:fnmusic-guest 分区 + 固定 userData + cookie flush + 旧数据迁移 |
+| 2 | 支持 fn-connect 外网访问 | remoteUrl 配置 + auto 模式（本地优先，失败/12s 超时切远程）+ 忽略证书选项 |
+| 3 | 默认网址作欢迎页配置项 | welcome.html 欢迎配置页 + 设置窗口可改；自动追加 /music（musicPath 可配） |
+| 4 | 可选音频输出设备 | 设置页 + 独立音频面板（audio-panel），setSinkId 双通道（元素 + AudioContext） |
+| 5 | 不修改网页前端 | 纯运行时注入（隔离世界 preload + 主世界脚本），零文件改动 |
+| 6 | 桌面歌词（可选） | **已按用户授权移除（v0.1.6）**——多次尝试无法稳定获取歌词 |
+| 7 | git 版本控制 | 仓库历史干净（曾重建为单提交），20 个提交 |
+| 8 | 多轮审查 | 7 轮审查记录于 REVIEW.md；**用户要求每轮修复后至少三轮独立审查再汇报** |
+| 9 | 去除个人信息 | scripts/check-privacy.js（git index 解析扫描）46 文件 0 违规 |
+| 10 | 注释与开源合规 | 全文件头注释；THIRD_PARTY_NOTICES.md（Electron/electron-builder/Listen1/YesPlayMusic/MusicBox，MIT） |
+
+## 3. 技术架构
+
+### 3.1 结构
+- **壳窗口**：本地页面（toolbar 工具栏 / welcome 欢迎页 / settings 设置 / audio-panel 音频面板），sandbox+contextIsolation+CSP
+- **guest 视图**：WebContentsView 承载飞牛网页，独立持久分区 `persist:fnmusic-guest`（登录态）
+- **双注入**：
+  - `guest-preload.js`（隔离世界，仅在主 frame 运行）：媒体元素 setSinkId 记账（WeakMap）、音量、消息桥
+  - `guest-mainworld.js`（主世界，executeJavaScript 注入全部 frame）：AudioContext 代理（构造期 sinkId + master gain 音量 + suspend/resume 设备切换）、诊断
+- **主进程模块**：main（入口/单实例/硬件加速/登录态）/ window-manager（窗口/视图/看门狗/注入）/ ipc（全部通道，发送者校验）/ settings / server-url（校验+解析+/music 追加）/ audio-devices（枚举+广播）/ security（权限按来源+证书透传）/ tray / logger（轮转 1MB×5）
+
+### 3.2 关键机制
+- **音频设备**：页面为纯 WebAudio（无 audio 元素）→ 构造期 sinkId 选项 + 运行中 suspend→setSinkId→resume（Chromium 限制）+ epoch 串行化；iframe 由主进程对所有 frame 广播 `__fnmusicSetSinkNow`
+- **音量**：覆盖 AudioContext.destination getter 返回 master GainNode（disconnect 拦截重连）；媒体元素仅显式指令时设置（不覆盖页面控件）
+- **硬件加速**：默认开启（设置/欢迎页可关，重启生效）；升级兼容（旧设置无键 → 延续软件渲染）；黑屏自愈（ready-to-show 10s 超时 + 未显式配置 → 自动软件渲染 + 弹窗重启）；CLI 逃生口 `--disable-gpu` / `--hardware-acceleration`
+- **登录态**：userData 固定 `%APPDATA%\FNMusicPC`（所有形态）；旧路径 `fnmusic-pc` 自动迁移（settings.json + Partitions/）；60s cookie flush + 退出双 flush；启动日志与诊断输出 Cookie 文件状态/cookieCount/localStorage 占用
+- **安全上下文**：`unsafely-treat-insecure-origin-as-secure` 标记已配置 http 来源（否则 mediaDevices 不可用）
+- **托盘**：X 关闭最小化到托盘（可关）、菜单（显示/隐藏/设置/退出）、单实例恢复窗口
+
+## 4. 版本历史（git 20 提交）
+
+- **v0.1.0** 初始：网页嵌套/登录态/cookie 持久化/欢迎页/设备/歌词框架/托盘前身
+- **v0.1.1** 黑屏修复：禁用硬件加速 + ready-to-show 兜底
+- **v0.1.2** 渲染诊断：生命周期日志 + 自检（黑屏定位）
+- **v0.1.3** iframe 广播/构造期 sinkId/异常兜底/日志脱敏轮转/托盘图标/诊断聚合
+- **v0.1.4** 音频面板 + 音量系统 + 歌词捕获改进（XHR P0 回归修复）
+- **v0.1.5** 硬件加速可选项 + cookie flush + 诊断容错 + DOM 歌词兜底
+- **v0.1.6**（当前）**移除桌面歌词** + 登录态修复（固定 userData/迁移）+ 黑屏自愈闭环 + 卸载清理
+
+## 5. 关键经验教训（新会话必读，避免重复踩坑）
+
+### 5.1 环境与工具链（本机 DSH 沙箱环境）
+1. **npm 缓存必须放工作区**（`.npmrc` 已配 `cache=.npm-cache`），否则 EPERM；
+2. **curl 的 schannel TLS 被沙箱拦截**，Electron 二进制需 `node scripts/electron-download.js`（node fetch 可用；GitHub 慢/超时 → npmmirror 镜像自动回退）；electron@33.4.11（v44 在该环境 Chromium 初始化崩溃，33 亦崩——**本沙箱内 Electron GUI 无法启动**，只能无头测试 + 用户真机验证）；
+3. **electron-builder 派生子进程（npm/app-builder/7za/makensis）触发沙箱 EPERM**：打包命令必须带 `sandbox_permissions: "danger-full-access"`（先被拒后升级，需用户批准）+ 环境变量 `ELECTRON_BUILDER_CACHE=`.builder-cache`、`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`；
+4. **输出目录被锁定（EBUSY）**：win-unpacked 的 app.asar 被占用（用户正在运行/杀软扫描）→ 先 `Stop-Process FNMusicPC`，仍锁则用 `--config.directories.output=dist-new` 换目录构建后复制产物；
+5. **git filter-branch 在沙箱不可用**（sh 信号管道被禁）→ 清理历史用「重建单提交仓库」（`rm -rf .git && git init`）；
+6. 构建产物 exe 文件名含版本号，旧版本清理后避免用户误用。
+
+### 5.2 产品技术经验
+1. **纯 WebAudio 播放器**：诊断发现飞牛播放器无 <audio> 元素（elements:0），一切以 AudioContext 为准；隔离世界 preload 无法影响主世界（contextIsolation），必须主世界注入；
+2. **preload 默认只在主 frame 运行**（nodeIntegrationInSubFrames=false）→ iframe 场景必须主进程对 framesInSubtree 广播；
+3. **Chromium 限制**：运行中 AudioContext 直接 setSinkId 返回成功但输出不变（需 suspend/resume）；AudioContext 构造期 sinkId 选项可避免竞态；
+4. **黑屏**：GPU 合成失败（特定驱动/远程桌面）→ 禁用硬件加速/软件渲染；ready-to-show 可能不触发（需超时兜底强制显示）；
+5. **登录态丢失**：便携版 userData 随 exe 移动 → 必须固定 userData 路径；cookie 异步写盘 → 周期 flush；
+6. **第三方面板数据捕获（歌词）不可靠**：fetch/XHR/WS/DOM 四通道均无法稳定获取飞牛歌词 → 按用户授权移除，避免过度投入；
+7. **日志是排查黑屏/登录态的关键**：生命周期日志、自检、诊断接口（设置页按钮）缺一不可；logger 失败必须显式报错（早期静默失败导致无法定位）；
+8. **每轮修复必须三轮审查**（用户流程要求）：A 功能正确性 / B 整体回归与需求 / C 安全隐私；审查常发现 P0 级回归（如 XHR 钩子引用已删常量）。
+
+### 5.3 隐私红线（用户硬性要求）
+- 仓库不得出现真实 IP（INTRA_IP）、凭据、FN Connect 域名、cookie/token——check-privacy 扫描 + 历史重建保障；
+- 真实地址只在 gitignore 的 `dev.config.json` 与 `新建 文本文档.txt`（用户任务笔记，勿动勿提交）；
+- 日志/诊断对 URL 脱敏（sanitizeUrl：剥 query/hash、token 打码）、userData 路径 %USERPROFILE% 化。
+
+## 6. 当前状态（v0.1.6，工作区干净）
+
+- git：20 提交，HEAD = `c222235`；`git status` 干净
+- 测试：`npm test` → scripts/test-headless.js **46/46 通过**
+- 隐私：`npm run check:privacy` → 46 文件 0 违规
+- 产物：`dist\FNMusicPC Setup 0.1.6.exe`（安装版 76.5MB）、`dist\FNMusicPC 0.1.6.exe`（便携版 76.3MB）
+- 依赖：electron ^33.4.11、electron-builder ^26.15.3、node_modules 已装（含手动下载的 electron 二进制）
+
+## 7. 待办与验证清单（用户真机）
+
+1. **登录态验证**：登录一次 → 托盘退出 → 重开免登录；看日志 `登录态 Cookie 文件` 与诊断 `cookieCount/localStorage`；
+2. **黑屏自愈验证**：第二台电脑安装 v0.1.6，若黑屏应弹「自动切换软件渲染」对话框 → 重启正常；
+3. **音频面板**：工具栏 🔊 → 设备即选即生效 + 音量联动（已确认正常，回归验证）；
+4. **欢迎页测试**：移走 dev.config.json 后启动应显示欢迎页（地址预填来自 dev.config.json）；
+5. **GitHub 发布（等用户授权）**：发布前替换 settings.html 关于区占位文本、确认 .npmrc 的 cache 行、跑 check-privacy + 全历史扫描；
+6. 遗留：dist/win-unpacked 曾因占用无法清理（EBUSY），如占用已释放可删除。
+
+## 8. 常用命令速查
+
+```powershell
+cd D:\ai\DeepSeek Harness\fnmusic_pc
+npm test                 # 无头测试（46 项）
+npm run check:privacy    # 隐私合规检查
+npm start                # 源码启动（真机；控制台可见日志）
+npm run smoke            # 冒烟测试（真机；自动加载自检退出）
+npm run dist             # 打包（真机直接可用；本沙箱需升级权限+镜像环境变量）
+# 打包环境变量：$env:ELECTRON_BUILDER_CACHE=".builder-cache"; $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+```
+
+## 9. 用户偏好与协作约定
+
+- 中文沟通；结构化、表格化汇报；每轮修复后 **≥3 轮独立审查** 再汇报；
+- 改动前先确认、功能移除需用户授权（如桌面歌词）；GitHub 发布必须等授权；
+- 真机验证依赖用户执行（本沙箱无法启动 GUI）；验证产物路径要写清楚（dist\ 下的 exe）；
+- 注意清理旧版本产物避免用户误用；升级打包前先 `Stop-Process FNMusicPC` 防 EBUSY。

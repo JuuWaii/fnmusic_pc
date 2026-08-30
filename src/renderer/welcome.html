@@ -36,6 +36,10 @@
       <input id="musicPath" type="text" placeholder="/music" spellcheck="false" />
 
       <label for="accessMode">访问模式</label>
+      <div class="form-check">
+        <input type="checkbox" id="hardwareAcceleration" checked />
+        <label for="hardwareAcceleration">启用硬件加速（重启后生效；关闭可解决黑屏问题）</label>
+      </div>
       <select id="accessMode">
         <option value="auto">自动：优先本地，失败自动切换远程</option>
         <option value="local">仅本地地址</option>

@@ -36,6 +36,7 @@ function showTest(ok, text) {
   $('opacityValue').textContent = current.lyricsOpacity ?? 0.9;
   $('ignoreCertErrors').checked = Boolean(current.ignoreCertErrors);
   $('minimizeToTray').checked = Boolean(current.minimizeToTray);
+  $('hardwareAcceleration').checked = current.hardwareAcceleration !== false;
 
   // 欢迎模式：简化页面
   if (isWelcome) {
@@ -121,6 +122,7 @@ $('btnSave').addEventListener('click', async () => {
     lyricsOpacity: Number($('lyricsOpacity').value),
     ignoreCertErrors: $('ignoreCertErrors').checked,
     minimizeToTray: $('minimizeToTray').checked,
+    hardwareAcceleration: $('hardwareAcceleration').checked,
   };
   // 音频设备：仅当选择项有变化时才发送（避免空列表时误清空）
   const sel = $('deviceSelect').value;
@@ -131,6 +133,10 @@ $('btnSave').addEventListener('click', async () => {
   current = await api.getSettings();
   if (result && result.ok === false) {
     toast('保存失败：' + (result.error || '未知错误'), true);
+    return;
+  }
+  if (result && result.needsRestart) {
+    toast('已保存——硬件加速设置需重启客户端后生效');
     return;
   }
   toast('已保存并应用');
@@ -144,7 +150,7 @@ $('btnDefaults').addEventListener('click', async () => {
   if (!confirm('确定恢复默认设置吗？服务器地址将被清空。')) return;
   await api.saveSettings({
     serverUrl: '', remoteUrl: '', musicPath: '/music', accessMode: 'auto',
-    audioDeviceId: '', ignoreCertErrors: false, minimizeToTray: true,
+    audioDeviceId: '', ignoreCertErrors: false, minimizeToTray: true, hardwareAcceleration: true,
     showDesktopLyrics: false, lyricsOpacity: 0.9,
   });
   location.reload();

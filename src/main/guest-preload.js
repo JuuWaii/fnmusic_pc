@@ -32,6 +32,7 @@ let lyricsEnabled = false;      // 桌面歌词开关
 let stateTimer = null;          // 播放进度上报定时器
 const appliedMedia = new WeakMap();    // el -> 已应用的 deviceId（WeakMap 自动回收，防泄漏）
 let lastLyricsHash = '';        // 歌词去重哈希
+let lastDomLyricSent = 0;       // DOM 歌词转发节流时间戳
 
 /** 初始化入口 */
 function initGuest() {
@@ -58,12 +59,15 @@ function initGuest() {
     }
   });
 
-  // 2) 主进程指令：桌面歌词开关（控制进度上报）
+  // 2) 主进程指令：桌面歌词开关（控制进度上报 + 转发主世界采集门控）
   ipcRenderer.on('fnmusic:lyrics-enabled', (_event, payload) => {
     const enabled = Boolean(payload && payload.enabled);
     if (enabled === lyricsEnabled) return;
     lyricsEnabled = enabled;
     if (lyricsEnabled) startStateTimer(); else stopStateTimer();
+    try {
+      window.postMessage({ __fnmusicLyricsEnabled: { enabled } }, '*');
+    } catch { /* 忽略 */ }
   });
 
   // 3) 主世界 → 本世界 → 主进程 的桥（歌词 + WebAudio 播放进度）
@@ -85,6 +89,15 @@ function initGuest() {
         paused: Boolean(st.paused),
         title: typeof st.title === 'string' ? st.title : (document.title || ''),
       });
+    }
+    // DOM 歌词兜底（页面渲染出的当前行文本；长度/频率限额——审查轮 F3）
+    const dl = d.__fnmusicDomLyric;
+    if (dl && typeof dl.text === 'string' && dl.text.length > 0) {
+      const now = Date.now();
+      if (dl.text.length <= 200 && now - lastDomLyricSent > 300) {
+        lastDomLyricSent = now;
+        ipcRenderer.send('fnmusic:dom-lyric', { text: dl.text });
+      }
     }
   });
 

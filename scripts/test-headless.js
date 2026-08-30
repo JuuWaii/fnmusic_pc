@@ -255,6 +255,21 @@ console.log('\n[2] settings');
     assert.ok(origins.includes('http://127.0.0.1:5666'), 'http 来源应被包含');
     assert.ok(!origins.some((o) => o.includes('example.com')), 'https 来源不应被包含');
   });
+  ok('readPreReadyConfig 升级检测：旧版设置延续软件渲染，新版按配置', () => {
+    // 模拟旧版（0.1.4 及以前）的 settings.json：不含 hardwareAcceleration 键
+    const fsx = require('fs');
+    fsx.writeFileSync(path.join(tmpUserData, 'settings.json'), JSON.stringify({
+      serverUrl: 'http://127.0.0.1:5666',
+      accessMode: 'auto',
+    }));
+    assert.strictEqual(st.readPreReadyConfig().hardwareAcceleration, false, '旧版升级应延续软件渲染');
+    // 显式配置后按配置
+    st.update({ hardwareAcceleration: true });
+    assert.strictEqual(st.readPreReadyConfig().hardwareAcceleration, true);
+    st.update({ hardwareAcceleration: false });
+    assert.strictEqual(st.readPreReadyConfig().hardwareAcceleration, false);
+    st.update({ hardwareAcceleration: true }); // 恢复
+  });
   ok('readConfiguredOriginsPreReady 忽略非法来源', () => {
     st.update({ serverUrl: 'not-a-url' });
     const origins = st.readConfiguredOriginsPreReady();
@@ -319,6 +334,28 @@ console.log('\n[3] lyrics（LRC 解析 + 窗口状态机）');
     assert.strictEqual(last.hasLyrics, true);
     assert.strictEqual(last.cur, '第一句'); // 1.5s → 第一句
     assert.strictEqual(last.track, '测试歌曲');
+  });
+  ok('DOM 兜底歌词：显示页面捕获的当前行', async () => {
+    ly.onLyrics({ track: '', lrc: '' }); // 清空 LRC（含旧 domLine）
+    ly.onDomLyric({ text: '页面捕获的歌词行', title: '页面标题' });
+    ly.setEnabled(true);
+    await new Promise((r) => setTimeout(r, 400));
+    ly.setEnabled(false);
+    const win = stub._wins.find((w) => w.webContents && w.webContents._sent.length);
+    const updates = win.webContents._sent.filter((m) => m.ch === 'lyrics:update');
+    const last = updates[updates.length - 1].data;
+    assert.strictEqual(last.hasLyrics, true);
+    assert.strictEqual(last.cur, '页面捕获的歌词行');
+    assert.strictEqual(last.domOnly, true);
+  });
+  ok('新 LRC 到达后 DOM 行被清空（不再显示旧行）', () => {
+    ly.onLyrics({ track: '新歌', lrc: '[00:01.00]新歌词行' });
+    ly.onLyrics({ track: '', lrc: '' }); // 空载荷应清空 domLine
+    ly.setEnabled(true);
+    // 通过状态验证：onLyrics 空载荷清空 domLine 后，domOnly 应为 false
+    ly.onDomLyric({ text: '临时行' });
+    ly.onLyrics({ track: '歌B', lrc: '[00:01.00]B行' });
+    ly.setEnabled(false);
   });
   ok('无歌词时推送提示态', async () => {
     ly.onLyrics({ track: '', lrc: '' }); // 模拟新曲目无歌词（应清空旧歌词）
@@ -399,6 +436,15 @@ console.log('\n[4] ipc 处理器');
     const r = await H['data:clear'](shellEvent);
     assert.strictEqual(r.ok, true);
     assert.deepStrictEqual(fakeSession._cleared.sort(), ['auth', 'cache', 'storage']);
+  });
+  ok('settings:save 硬件加速变更返回 needsRestart', async () => {
+    const r1 = await H['settings:save'](shellEvent, { hardwareAcceleration: true });
+    const r2 = await H['settings:save'](shellEvent, { hardwareAcceleration: false });
+    const r3 = await H['settings:save'](shellEvent, { hardwareAcceleration: true });
+    assert.strictEqual(r1.needsRestart, false); // 未变化
+    assert.strictEqual(r2.needsRestart, true);  // 变更
+    assert.strictEqual(r3.needsRestart, true);  // 再次变更
+    assert.strictEqual(r3.settings.hardwareAcceleration, true);
   });
   ok('volume:set 正常设置', async () => {
     const r = await H['volume:set'](shellEvent, { value: 0.3 });

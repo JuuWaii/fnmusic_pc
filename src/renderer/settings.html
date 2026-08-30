@@ -89,13 +89,19 @@
           <span>忽略证书错误（FN Connect 隧道异常时使用）</span>
         </label>
       </div>
+      <p class="hint warn">仅在远程访问出现证书问题时临时开启，普通局域网无需开启。</p>
       <div class="row">
         <label class="switch-label">
           <input type="checkbox" id="minimizeToTray" />
           <span>关闭主窗口时最小化到系统托盘（后台继续播放）</span>
         </label>
       </div>
-      <p class="hint warn">仅在远程访问出现证书问题时临时开启，普通局域网无需开启。</p>
+      <div class="row">
+        <label class="switch-label">
+          <input type="checkbox" id="hardwareAcceleration" />
+          <span>启用硬件加速（<b>重启客户端后生效</b>；关闭可解决部分显卡/远程桌面的黑屏问题）</span>
+        </label>
+      </div>
       <div class="row">
         <button id="btnClearData" class="danger">清除登录数据（Cookie / 缓存）</button>
       </div>

@@ -24,10 +24,28 @@ const ipc = require('./ipc');
 const menu = require('./menu');
 const tray = require('./tray');
 
-// 【兼容性】禁用硬件加速：部分显卡/驱动/远程桌面环境下 Chromium GPU 合成失败，
-// 表现为窗口全黑且 ready-to-show 不触发（启动不弹窗）。音乐客户端渲染负载低，
-// 软件渲染（SwiftShader）足够流畅且兼容性最好。
-app.disableHardwareAcceleration();
+// 【兼容性】硬件加速策略：默认开启；用户可在设置/欢迎页关闭（部分显卡/驱动/远程桌面
+// 环境下 Chromium GPU 合成失败会黑屏）。必须在 Chromium 初始化前决定，重启生效。
+// CLI 逃生口（审查轮 D1）：黑屏无法操作 UI 时，可在启动参数中强制切换——
+//   --disable-gpu        强制软件渲染（修黑屏）
+//   --hardware-acceleration  强制开启硬件加速
+let forceGpu = null;
+for (const arg of process.argv) {
+  if (arg === '--disable-gpu') forceGpu = false;
+  else if (arg === '--hardware-acceleration') forceGpu = true;
+}
+try {
+  const preReady = settings.readPreReadyConfig();
+  const useHardware = forceGpu !== null ? forceGpu : preReady.hardwareAcceleration;
+  if (!useHardware) {
+    app.disableHardwareAcceleration();
+    logger.info('已按设置禁用硬件加速（软件渲染）' + (forceGpu === false ? ' [CLI 逃生口]' : ''));
+  } else if (forceGpu === true) {
+    logger.info('已按 CLI 参数强制开启硬件加速');
+  }
+} catch (e) {
+  logger.warn('读取硬件加速设置失败（使用默认开启）:', e.message);
+}
 
 // Windows 通知/任务栏分组标识（需在 ready 前设置）
 app.setAppUserModelId('com.fnmusic.pc');
@@ -37,10 +55,10 @@ app.setAppUserModelId('com.fnmusic.pc');
 // 页面内 navigator.mediaDevices 不可用，导致音频输出设备无法枚举/定向。
 // 此开关仅作用于用户自己配置的来源，不影响其他站点（详见 settings.js 说明）。
 try {
-  const secureOrigins = settings.readConfiguredOriginsPreReady();
-  if (secureOrigins.length) {
-    app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', secureOrigins.join(','));
-    logger.info('已将以下 HTTP 来源标记为安全上下文:', secureOrigins.join(', '));
+  const preReady = settings.readPreReadyConfig();
+  if (preReady.origins.length) {
+    app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', preReady.origins.join(','));
+    logger.info('已将以下 HTTP 来源标记为安全上下文:', preReady.origins.join(', '));
   }
 } catch (e) {
   logger.warn('安全上下文标记失败（不影响启动）:', e.message);
@@ -82,13 +100,27 @@ function bootstrap() {
   process.on('uncaughtException', (e) => logger.error('未捕获异常:', e && e.stack ? e.stack : e));
   process.on('unhandledRejection', (e) => logger.error('未处理 Promise 拒绝:', e && e.message ? e.message : e));
 
+  // 登录态落盘保障：Cookie 默认异步延迟写盘，异常退出（强杀/断电）会丢最近登录态。
+  // 周期性强制 flush + 退出时 flush，确保"登录一次，下次免登录"。
+  const cookieFlushTimer = setInterval(() => {
+    guestSession.cookies.flushStore().catch(() => {});
+  }, 60000);
   app.on('before-quit', () => {
     global.__fnmusicQuit = true; // 允许主窗口 close 真正生效
     lyrics.dispose();
+    guestSession.cookies.flushStore().catch(() => {});
+  });
+  app.on('will-quit', () => {
+    // 定时器在真正退出时才清理（避免退出被取消后本会话失去周期 flush——审查轮 C1）
+    clearInterval(cookieFlushTimer);
+    guestSession.cookies.flushStore().catch(() => {});
   });
 
   // 自动化冒烟测试：npm run smoke（仅开发/CI 使用；打包产物不启用）
-  if (!app.isPackaged && process.argv.includes('--smoke-test')) runSmokeTest();
+  if (!app.isPackaged && process.argv.includes('--smoke-test')) {
+    app.commandLine.appendSwitch('disable-gpu'); // CI/远程桌面环境确定性（审查轮 D4）
+    runSmokeTest();
+  }
 }
 
 /** 冒烟测试：加载完成后校验核心链路并退出 */

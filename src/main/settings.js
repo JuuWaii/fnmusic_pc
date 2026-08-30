@@ -25,22 +25,25 @@ const DEFAULTS = Object.freeze({
   musicPath: '/music',      // 音乐入口路径：地址路径为空时自动追加（置空则不加）
   minimizeToTray: true,    // 关闭主窗口时最小化到系统托盘（后台继续播放）
   volume: 1,                // 客户端音量（0~1，作用于网页播放器输出）
+  hardwareAcceleration: true, // 硬件加速（需重启生效；关闭可解决部分显卡/远程桌面黑屏）
 });
 
 /**
- * 启动早期（app ready 之前）读取已配置的服务器来源列表。
+ * 启动早期（app ready 之前）读取的预启动配置。
+ * 返回 { origins: string[], hardwareAcceleration: boolean }
  *
- * 用途：飞牛音乐网页通常运行在纯 HTTP 的内网地址上，Chromium 视其为
- * 「非安全上下文」，页面内 navigator.mediaDevices 不可用（音频设备枚举失败）。
- * 主进程在启动早期将这些来源加入 Chromium 的
- * 'unsafely-treat-insecure-origin-as-secure' 开关，仅对用户自己配置的
- * http 地址生效，使其获得安全上下文能力（设备枚举 / setSinkId 等）。
+ * - origins：已配置的 http 服务器来源，供 'unsafely-treat-insecure-origin-as-secure'
+ *   开关使用（纯 HTTP 内网地址在 Chromium 中属非安全上下文，mediaDevices 不可用）；
+ * - hardwareAcceleration：用户是否启用硬件加速（false 时主进程需在 Chromium 初始化前
+ *   调用 app.disableHardwareAcceleration()，否则运行期无法切换）。
  *
  * 注意：本函数不得依赖任何 Electron 运行时状态（仅使用 app 的基础路径 API）。
  */
-function readConfiguredOriginsPreReady() {
+function readPreReadyConfig() {
   const origins = new Set();
   const candidates = [];
+  let settingsFileExists = false;
+  let rawSettings = null;
   // 1) 开发期配置（dev.config.json，git 忽略）
   try {
     if (!app.isPackaged && process.env.FNMUSIC_NO_DEV_CONFIG !== '1') {
@@ -48,10 +51,12 @@ function readConfiguredOriginsPreReady() {
       candidates.push(dev.serverUrl, dev.remoteUrl);
     }
   } catch { /* 忽略 */ }
-  // 2) 用户已保存的设置（userData/settings.json）
+  // 2) 用户已保存的设置（userData/settings.json，单次读盘复用）
   try {
-    const raw = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'settings.json'), 'utf8'));
-    candidates.push(raw.serverUrl, raw.remoteUrl);
+    const p = path.join(app.getPath('userData'), 'settings.json');
+    settingsFileExists = fs.existsSync(p);
+    rawSettings = JSON.parse(fs.readFileSync(p, 'utf8'));
+    candidates.push(rawSettings.serverUrl, rawSettings.remoteUrl);
   } catch { /* 忽略 */ }
   for (const u of candidates) {
     try {
@@ -59,7 +64,22 @@ function readConfiguredOriginsPreReady() {
       if (url.protocol === 'http:' && url.hostname) origins.add(url.origin);
     } catch { /* 忽略非法地址 */ }
   }
-  return [...origins];
+  // 硬件加速偏好（审查轮 E1 升级兼容）：
+  // - 全新安装（无 settings.json）：默认开启（用户要求）；
+  // - 已存在设置但未含该键（从旧版升级，旧版为软件渲染）：延续关闭，避免黑屏回归；
+  // - 显式配置过：按配置。
+  let hardwareAcceleration = true;
+  if (settingsFileExists) {
+    hardwareAcceleration = rawSettings && typeof rawSettings.hardwareAcceleration === 'boolean'
+      ? rawSettings.hardwareAcceleration
+      : false; // 旧版升级：延续软件渲染
+  }
+  return { origins: [...origins], hardwareAcceleration };
+}
+
+/** 兼容旧调用（仅返回来源列表） */
+function readConfiguredOriginsPreReady() {
+  return readPreReadyConfig().origins;
 }
 
 /** 可持久化的键集合（防止写入未知字段） */
@@ -141,4 +161,4 @@ function getAll() {
   return { ...state };
 }
 
-module.exports = { load, update, getAll, readConfiguredOriginsPreReady, DEFAULTS };
+module.exports = { load, update, getAll, readConfiguredOriginsPreReady, readPreReadyConfig, DEFAULTS };

@@ -65,7 +65,8 @@ const state = {
   enabled: false,
   interactive: true,   // 窗口是否可交互（false = 点击穿透）
   track: '',
-  lines: [],           // 当前歌词行
+  lines: [],           // 当前歌词行（LRC 时间轴）
+  domLine: '',         // DOM 兜底歌词（页面渲染的当前行，无时间轴）
   currentTime: 0,
   playing: false,
   win: null,
@@ -77,15 +78,17 @@ const MAX_LRC_LENGTH = 200 * 1024;
 const MAX_TRACK_LENGTH = 200;
 
 function onLyrics(payload) {
-  // 无有效载荷/新曲目无歌词：清空旧歌词（避免显示上一首的歌词）
+  // 无有效载荷/新曲目无歌词：清空旧歌词（含 DOM 兜底行，避免显示上一首内容——审查轮 C1）
   if (!payload || typeof payload.lrc !== 'string' || payload.lrc.length > MAX_LRC_LENGTH) {
     state.lines = [];
+    state.domLine = '';
     state.track = '';
     return;
   }
   const lines = parseLrc(payload.lrc);
   if (!lines.length) {
     state.lines = [];
+    state.domLine = '';
     state.track = payload.track && typeof payload.track === 'string' ? payload.track.slice(0, MAX_TRACK_LENGTH) : '';
     return;
   }
@@ -94,6 +97,16 @@ function onLyrics(payload) {
     ? payload.track.slice(0, MAX_TRACK_LENGTH)
     : '';
   state.lines = lines;
+}
+
+/** DOM 兜底歌词（无时间轴：页面渲染出的当前行，直接显示） */
+function onDomLyric(payload) {
+  if (!payload || typeof payload.text !== 'string' || !payload.text.length) return;
+  state.domLine = payload.text.slice(0, MAX_TRACK_LENGTH);
+  // 无 LRC 时补充歌名来源（document.title，审查轮 C3）
+  if (!state.track && typeof payload.title === 'string' && payload.title) {
+    state.track = payload.title.slice(0, MAX_TRACK_LENGTH);
+  }
 }
 
 /** 上报播放进度 */
@@ -161,13 +174,17 @@ function tick() {
   const idx = indexForTime(lines, currentTime);
   const cur = idx >= 0 ? lines[idx] : null;
   const next = idx >= 0 && idx + 1 < lines.length ? lines[idx + 1] : null;
+  // 歌词来源：优先 LRC 时间轴；无 LRC 但捕获到 DOM 当前行时显示 DOM 行
+  const hasLyrics = lines.length > 0;
+  const domOnly = !hasLyrics && Boolean(state.domLine);
   state.win.webContents.send('lyrics:update', {
     track: state.track,
-    cur: cur ? cur.text : '',
-    next: next ? next.text : '',
+    cur: hasLyrics ? (cur ? cur.text : '') : (domOnly ? state.domLine : ''),
+    next: hasLyrics ? (next ? next.text : '') : '',
     idx,
     total: lines.length,
-    hasLyrics: lines.length > 0,
+    hasLyrics: hasLyrics || domOnly,
+    domOnly,
     progress: currentTime,
     playing: state.playing,
   });
@@ -258,4 +275,4 @@ function dispose() {
   if (state.tickTimer) { clearInterval(state.tickTimer); state.tickTimer = null; }
 }
 
-module.exports = { onLyrics, onAudioState, setEnabled, setOpacity, setInteractive, dispose, parseLrc, indexForTime };
+module.exports = { onLyrics, onDomLyric, onAudioState, setEnabled, setOpacity, setInteractive, dispose, parseLrc, indexForTime };

@@ -13,6 +13,7 @@ const $ = (id) => document.getElementById(id);
   $('remoteUrl').value = s.remoteUrl || '';
   $('musicPath').value = s.musicPath || '';
   $('accessMode').value = s.accessMode || 'auto';
+  $('hardwareAcceleration').checked = s.hardwareAcceleration !== false;
 })();
 
 /** 展示测试结果 */
@@ -43,10 +44,14 @@ $('btnStart').addEventListener('click', async () => {
     remoteUrl,
     musicPath: $('musicPath').value.trim(),
     accessMode: $('accessMode').value,
+    hardwareAcceleration: $('hardwareAcceleration').checked,
   });
   if (result && result.ok === false) {
     showResult(false, '保存失败：' + (result.error || '未知错误'));
     return;
+  }
+  if (result && result.needsRestart) {
+    showResult(false, '硬件加速设置需重启客户端后生效');
   }
   // 保存后主进程会切换到「工具栏 + 网页」模式，本页面被替换，无需额外操作
 });

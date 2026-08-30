@@ -161,6 +161,8 @@ function register(ctx) {
 
     const prev = settings.getAll();
     const next = settings.update(p);
+    // 硬件加速变更需要重启才生效（返回给渲染层提示）
+    const needsRestart = 'hardwareAcceleration' in p && p.hardwareAcceleration !== prev.hardwareAcceleration;
 
     // 仅当「解析后的实际加载地址」发生变化时才重新加载主页（避免保存歌词透明度等
     // 无关设置时打断播放）
@@ -181,7 +183,7 @@ function register(ctx) {
       notifyGuestLyricsEnabled(next.showDesktopLyrics);
     }
     if ('lyricsOpacity' in p) lyrics.setOpacity(next.lyricsOpacity);
-    return { ok: true, settings: next };
+    return { ok: true, settings: next, needsRestart };
   });
 
   /* ---------- 服务器 ---------- */
@@ -352,6 +354,12 @@ function register(ctx) {
   ipcMain.on('fnmusic:audio-state', (event, payload) => {
     if (!isTrustedGuestSender(event)) return;
     lyrics.onAudioState(payload);
+  });
+  ipcMain.on('fnmusic:dom-lyric', (event, payload) => {
+    if (!isTrustedGuestSender(event)) return;
+    if (!payload || typeof payload.text !== 'string') return;
+    if (payload.text.length > 200) return; // 长度限额（审查轮 F3）
+    lyrics.onDomLyric(payload);
   });
   ipcMain.on('fnmusic:log', (event, payload) => {
     if (isTrustedGuestSender(event) && typeof payload === 'string' && payload.length < 500) {

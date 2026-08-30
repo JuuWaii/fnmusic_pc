@@ -78,8 +78,12 @@ if (typeof window !== 'undefined') {
     if (window.__fnmusicMainworld) return;
     window.__fnmusicMainworld = true;
 
+    // 错误记录（诊断用）：注入脚本各分段失败时记录，保证诊断接口始终可用
+    const initErrors = [];
+
     let sinkId = ''; // 当前目标音频输出设备
     let volume = 1;    // 当前音量（0~1，作用于页面播放器输出）
+    let lyricsEnabled = false; // 桌面歌词开关（主世界侧门控：关闭时不采集/不上报）
 
     /* ---- 诊断统计（供主进程 /app:diagnose-audio 读取） ---- */
     const diag = {
@@ -91,7 +95,42 @@ if (typeof window !== 'undefined') {
       audioContextPatched: false,
       fetchHooked: false,
       xhrHooked: false,
+      wsHooked: false,
       sinkResults: [], // 最近 20 条 setSinkId 结果
+      initErrors: initErrors,
+      lyricsScanned: 0,
+      lyricsHits: 0,
+    };
+
+    // 诊断接口提前注册（即使后续安装失败，诊断也能返回注入状态与错误）
+    window.__fnmusicDiagnose = () => {
+      diag.iframes = document.querySelectorAll('iframe').length;
+      diag.sinkId = sinkId;
+      diag.volume = volume;
+      diag.contexts = liveContexts.length;
+      diag.contextStates = liveContexts.map((c) => c && c.state ? c.state : 'unknown');
+      return diag;
+    };
+    diag.domLyricHits = 0;
+    window.__fnmusicSetSinkNow = (deviceId) => {
+      if (typeof deviceId === 'string') {
+        sinkId = deviceId;
+        diag.sinkId = deviceId;
+        applySinkToElements();
+        applySinkToContexts();
+      }
+    };
+    window.__fnmusicSetVolume = (v) => {
+      volume = Math.min(1, Math.max(0, Number(v) || 0));
+      applyVolume();
+      return volume;
+    };
+    const safeRun = (name, fn) => {
+      try { fn(); } catch (err) {
+        const msg = name + ': ' + (err && err.message || err);
+        initErrors.push(msg.slice(0, 200));
+        if (initErrors.length > 10) initErrors.shift();
+      }
     };
     function diagPush(kind, ok, detail) {
       diag.sinkResults.push({ t: Date.now(), kind, ok, detail: String(detail || '').slice(0, 200) });
@@ -134,6 +173,7 @@ if (typeof window !== 'undefined') {
      *   创建即定向输出，无竞态、不打断播放）——审查轮 A P6；
      * - 兜底：构造抛错（如 sinkId 不被支持）时回退普通构造 + setTimeout(0) 补应用。
      */
+    safeRun('audio-patch', () => {
     const OrigAC = window.AudioContext || window.webkitAudioContext;
     if (OrigAC && !OrigAC.__fnSinkPatched) {
       const PatchedAC = function () {
@@ -176,6 +216,7 @@ if (typeof window !== 'undefined') {
       if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
       diag.audioContextPatched = true;
     }
+    }); // safeRun audio-patch
 
     /**
      * 为 AudioContext 挂载「主音量增益节点」。
@@ -349,68 +390,53 @@ if (typeof window !== 'undefined') {
       for (const ctx of liveContexts) applySinkToContext(ctx);
     }
 
-    // 接收隔离世界转发的设备切换指令
-    window.addEventListener('message', (e) => {
-      if (!e || e.source !== window) return; // 仅接受本窗口消息，防 iframe 伪造
-      const d = e && e.data;
-      if (!d || typeof d !== 'object') return;
-      if (d.__fnmusicSetSink && typeof d.__fnmusicSetSink.deviceId === 'string') {
-        sinkId = d.__fnmusicSetSink.deviceId;
-        diag.sinkId = sinkId;
-        diagPush('switch', true, 'device=' + sinkId);
-        applySinkToElements();
-        applySinkToContexts();
-      }
-      if (d.__fnmusicSetVolume && typeof d.__fnmusicSetVolume.value === 'number') {
-        window.__fnmusicSetVolume(d.__fnmusicSetVolume.value);
-      }
+    // 接收隔离世界转发的指令（设备/音量/歌词开关）
+    safeRun('message-bridge', () => {
+      window.addEventListener('message', (e) => {
+        if (!e || e.source !== window) return; // 仅接受本窗口消息，防 iframe 伪造
+        const d = e && e.data;
+        if (!d || typeof d !== 'object') return;
+        if (d.__fnmusicSetSink && typeof d.__fnmusicSetSink.deviceId === 'string') {
+          sinkId = d.__fnmusicSetSink.deviceId;
+          diag.sinkId = sinkId;
+          diagPush('switch', true, 'device=' + sinkId);
+          applySinkToElements();
+          applySinkToContexts();
+        }
+        if (d.__fnmusicSetVolume && typeof d.__fnmusicSetVolume.value === 'number') {
+          window.__fnmusicSetVolume(d.__fnmusicSetVolume.value);
+        }
+        if (d.__fnmusicLyricsEnabled && typeof d.__fnmusicLyricsEnabled.enabled === 'boolean') {
+          lyricsEnabled = d.__fnmusicLyricsEnabled.enabled;
+          diag.lyricsEnabled = lyricsEnabled;
+        }
+      });
     });
 
-    // 主进程诊断读取接口
-    window.__fnmusicDiagnose = () => {
-      diag.iframes = document.querySelectorAll('iframe').length;
-      diag.sinkId = sinkId;
-      diag.volume = volume;
-      diag.contexts = liveContexts.length;
-      diag.contextStates = liveContexts.map((c) => c && c.state ? c.state : 'unknown');
-      return diag;
-    };
-    // 立即设置初始设备（注入后由主进程回放当前设置）
-    window.__fnmusicSetSinkNow = (deviceId) => {
-      if (typeof deviceId === 'string') {
-        sinkId = deviceId;
-        diag.sinkId = deviceId;
-        applySinkToElements();
-        applySinkToContexts();
-      }
-    };
-    // 设置音量（0~1，立即作用于页面播放器输出）
-    window.__fnmusicSetVolume = (v) => {
-      volume = Math.min(1, Math.max(0, Number(v) || 0));
-      applyVolume();
-      return volume;
-    };
-
     // WebAudio 播放进度上报（歌词时间轴；媒体元素路径由隔离世界 preload 上报）
-    setInterval(() => {
-      if (!liveContexts.length) return;
-      let playing = null;
-      for (const ctx of liveContexts) {
-        if (ctx.state === 'running') { playing = ctx; break; }
-      }
-      if (!playing) return; // 无正在播放的上下文时不打扰主进程
-      window.postMessage({
-        __fnmusicAudioState: {
-          playing: true,
-          currentTime: typeof playing.currentTime === 'number' ? playing.currentTime : 0,
-          duration: 0, // WebAudio 无总时长概念，交由歌词窗口按行推进
-          paused: false,
-          title: document.title || '',
-        },
-      }, '*');
-    }, 1000);
+    safeRun('time-report', () => {
+      setInterval(() => {
+        if (!lyricsEnabled) return; // 歌词关闭时不采集（审查轮 F1 门控）
+        if (!liveContexts.length) return;
+        let playing = null;
+        for (const ctx of liveContexts) {
+          if (ctx.state === 'running') { playing = ctx; break; }
+        }
+        if (!playing) return; // 无正在播放的上下文时不打扰主进程
+        window.postMessage({
+          __fnmusicAudioState: {
+            playing: true,
+            currentTime: typeof playing.currentTime === 'number' ? playing.currentTime : 0,
+            duration: 0, // WebAudio 无总时长概念，交由歌词窗口按行推进
+            paused: false,
+            title: document.title || '',
+          },
+        }, '*');
+      }, 1000);
+    });
 
     // 动态创建的媒体元素（rAF 去抖）
+    safeRun('media-observe', () => {
     if (typeof MutationObserver !== 'undefined') {
       let scheduled = false;
       new MutationObserver(() => {
@@ -420,6 +446,7 @@ if (typeof window !== 'undefined') {
       }).observe(document.documentElement, { childList: true, subtree: true });
     }
     applySinkToElements();
+    }); // safeRun media-observe
 
     /* ---- 2. 歌词捕获（fetch / XHR 嗅探） ---- */
 
@@ -452,6 +479,7 @@ if (typeof window !== 'undefined') {
       if (found) reportLyrics(found);
     }
 
+    safeRun('lyrics-hooks', () => {
     const origFetch = window.fetch;
     if (typeof origFetch === 'function') {
       diag.fetchHooked = true;
@@ -588,7 +616,101 @@ if (typeof window !== 'undefined') {
         return origSend.apply(this, args);
       };
     }
-  })();
+
+    // DOM 歌词兜底捕获（独立 safeRun 段；接口嗅探未命中时的第二通道）。
+    // 审查轮 B/C 修复：当前行优先（active/cur 特征）、排除控件节点、可见性校验、
+    // 歌词开关门控（关闭时零采集）。
+    safeRun('dom-lyric', () => {
+      let lastDomLyricText = '';
+      let observer = null;
+      let pollTimer = null;
+
+      const DOM_LYRIC_SELECTOR = [
+        '[class*="lyric"]:not([class*="btn"]):not([class*="switch"]):not([class*="icon"]):not([class*="button"]):not([class*="search"]):not([class*="setting"]):not([class*="tip"])',
+        '[id*="lyric"]:not([id*="btn"]):not([id*="icon"]):not([id*="button"]):not([id*="search"])',
+        '[class*="lrc"]:not([class*="btn"]):not([class*="icon"]):not([class*="button"])',
+        '[aria-label*="歌词"]',
+      ].join(',');
+
+      // 判定一个节点是否像"歌词当前行"：可见 + 短文本 + 非控件
+      const isVisible = (node) => {
+        try {
+          if (!node.offsetParent && node.getClientRects) {
+            return node.getClientRects().length > 0 || node.offsetParent !== null;
+          }
+          return node.offsetParent !== null;
+        } catch { return false; }
+      };
+      const looksLikeLyricLine = (node) => {
+        if (!node || typeof node.innerText !== 'string') return false;
+        const text = node.innerText.trim();
+        if (text.length < 2 || text.length > 120) return false;
+        if (text.includes('\n')) return false;
+        if (/^(歌词|翻译|查看|关闭|开启)$/.test(text)) return false; // 控件标签
+        return true;
+      };
+
+      const readDomLyric = () => {
+        try {
+          let best = null;
+          const nodes = document.querySelectorAll(DOM_LYRIC_SELECTOR);
+          for (const node of nodes) {
+            // 跳过控件与隐藏节点
+            if (node.closest && node.closest('button, input, textarea, [role="textbox"], [contenteditable]')) continue;
+            if (!isVisible(node)) continue;
+            if (!looksLikeLyricLine(node)) continue;
+            // 当前行优先：class 含 active/cur/current/hl
+            const cls = (typeof node.className === 'string' ? node.className : '') + ' ' + (node.id || '');
+            const score = /(active|current|cur|hl|highlight)/i.test(cls) ? 2 : 1;
+            if (!best || score > best.score) best = { node, text: node.innerText.trim(), score };
+          }
+          if (best) {
+            if (best.text !== lastDomLyricText) {
+              lastDomLyricText = best.text;
+              diag.domLyricHits = (diag.domLyricHits || 0) + 1;
+              window.postMessage({ __fnmusicDomLyric: { text: best.text } }, '*');
+            }
+          }
+        } catch { /* 页面结构变化，忽略 */ }
+      };
+
+      const stopCapture = () => {
+        if (observer) { try { observer.disconnect(); } catch { /* 忽略 */ } observer = null; }
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      };
+      const startCapture = () => {
+        if (!lyricsEnabled) return;
+        if (!observer && typeof MutationObserver !== 'undefined') {
+          let scheduled = false;
+          observer = new MutationObserver(() => {
+            if (scheduled) return;
+            scheduled = true;
+            requestAnimationFrame(() => { scheduled = false; readDomLyric(); });
+          });
+          try {
+            observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+          } catch { /* 忽略 */ }
+        }
+        if (!pollTimer) pollTimer = setInterval(readDomLyric, 2000);
+        readDomLyric();
+      };
+
+      // 歌词开关切换时启停采集（关闭桌面歌词时零 DOM 采集——审查轮 F1）
+      const origListener = window.addEventListener.bind(window);
+      window.addEventListener('message', (e) => {
+        const d = e && e.data;
+        if (!d || typeof d !== 'object') return;
+        if (d.__fnmusicLyricsEnabled) {
+          if (lyricsEnabled) startCapture(); else stopCapture();
+        }
+      });
+
+      // 初始状态由主进程回放（replaySettingsToGuest 转发）；先按当前值启动
+      if (lyricsEnabled) startCapture();
+    });
+
+    }); // 关闭 safeRun('lyrics-hooks', ...)
+  })(); // 关闭并执行 mainWorldInit
 }
 
 /* ---------------- 单元测试导出（仅 Node 环境） ---------------- */

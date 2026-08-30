@@ -13,7 +13,10 @@ bridge.onUpdate((d) => {
     $('trackName').title = d.track || '';
   } else {
     $('curLine').textContent = '未获取到歌词';
-    $('nextLine').textContent = '（当前歌曲无歌词，或网页接口未提供歌词数据）';
+    $('nextLine').textContent = '（当前歌曲无歌词，或网页未提供歌词数据）';
+  }
+  if (d.domOnly) {
+    $('trackName').textContent = (d.track || '正在播放') + ' · 歌词（页面捕获）';
   }
 });
 

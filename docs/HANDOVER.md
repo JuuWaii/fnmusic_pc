@@ -62,7 +62,8 @@
 - **v0.1.12** **自动登录真机联调**：CDP 实测发现 /music/login 有「使用 NAS 登录」与「登录」双按钮，旧正则误点 NAS → 优先 type=submit + 精确文本锚定排除 NAS/忘记；SPA 轮询 + MutationObserver 覆盖动态表单；真机端到端验证填写+提交成功
 - **v0.1.13** **欢迎页自动登录配置**：欢迎页新增账号密码输入区（虚线卡片样式），保存语义与设置页一致（账号变化才提交/密码非空才提交/清空账号清密码）；复用既有凭据加密链路
 - **v0.1.14** **FN Connect 自动登录修复**：远程地址 302 到内网（origin 变化）导致注入被过滤 → 主 frame 信任导航链 + 页面侧 origin 校验（已配置 origins ∪ FN Connect 官方代理域）；文案改「飞牛音乐账号（非 NAS 账号）」；历史隐私清理（filter-branch 重写敏感 commit message）
-- **v0.1.15**（当前）**自动登录失效修复**：v0.1.14 页面侧 origin 校验正则写于模板字符串，反斜杠经字符串解析丢失 → 生成脚本 SyntaxError 未执行 → 双反斜杠转义修复；CDP 端到端验证填写+提交成功
+- **v0.1.15** **自动登录失效修复**：v0.1.14 页面侧 origin 校验正则写于模板字符串，反斜杠经字符串解析丢失 → 生成脚本 SyntaxError 未执行 → 双反斜杠转义修复；CDP 端到端验证填写+提交成功
+- **v0.1.16/v0.1.17**（当前）**自动登录提速+循环检测+仅 remoteUrl 修复**：150ms 循环检测（dom-ready 注入/MutationObserver 全监听/去节流）检测登录页加载完成即填表一次；页面侧 origin 校验仅对子 frame 严格（主 frame 信任导航链——FN Connect 仅配置 remoteUrl 时 302 到内网可自动填写）
 
 ## 5. 关键经验教训（新会话必读，避免重复踩坑）
 
@@ -89,17 +90,17 @@
 - 真实地址只在 gitignore 的 `dev.config.json` 与 `新建 文本文档.txt`（用户任务笔记，勿动勿提交）；
 - 日志/诊断对 URL 脱敏（sanitizeUrl：剥 query/hash、token 打码）、userData 路径 %USERPROFILE% 化。
 
-## 6. 当前状态（v0.1.15，工作区干净）
+## 6. 当前状态（v0.1.17，工作区干净）
 
-- git：43 提交，HEAD = 审查轮 15 修复提交（+版本号 0.1.15 待提交）；`git status` 干净
+- git：46 提交，HEAD = v0.1.17 修复提交（+版本号待提交）；`git status` 干净
 - 测试：`npm test` → scripts/test-headless.js **60/60 通过**
 - 隐私：`npm run check:privacy` → 42 文件 0 违规（含 FN Connect 个人路径段检测）
-- 产物：`dist\FNMusicPC Setup 0.1.15.exe`（安装版）、`dist\FNMusicPC 0.1.15.exe`（便携版）
+- 产物：`dist\FNMusicPC Setup 0.1.17.exe`（安装版）、`dist\FNMusicPC 0.1.17.exe`（便携版）
 - 依赖：electron ^33.4.11、electron-builder ^26.15.3、node_modules 已装（含手动下载的 electron 二进制）
 
 ## 7. 待办与验证清单（用户真机）
 
-1. **v0.1.15 验证（重点）**：本地与 FN Connect 登录页均应自动填写提交（v0.1.14 正则转义 bug 已修）；
+1. **v0.1.17 验证（重点）**：仅配置 remoteUrl（FN Connect）时登录页应自动填写提交；本地模式同验；
 2. **登录态验证**：登录一次 → 托盘退出 → 重开免登录；看日志 Cookie 文件与诊断 `cookieCount/localStorage`；
 3. **音频面板**：工具栏 🔊 → 设备即选即生效 + 音量联动（已确认正常，回归验证）；
 4. **欢迎页测试**：移走 dev.config.json 后启动应显示欢迎页（地址预填来自 dev.config.json）——v0.1.7 已修复该路径；

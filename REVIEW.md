@@ -344,3 +344,28 @@ token '?'`（生成脚本第 12-13 行）。
 点击「登录」→ 表单提交成功。测试 60/60，check-privacy 0 违规。
 
 **真机验证建议**：v0.1.15 本地与 FN Connect 登录页均应自动填写并提交。
+
+## 审查轮 16：自动登录提速 + 循环检测（v0.1.16/v0.1.17）
+
+**用户需求**：① 登录速度慢——页面 <1s 加载完但脚本仍在等待；② 简化逻辑——
+循环检测登录页加载完成（可登录时即可），检测成功立即填表登录一次；③ FN Connect
+仅配置 remoteUrl 时登录页仍无法自动填写。
+
+**v0.1.16（提速+简化）**：
+- 轮询间隔 500ms → **150ms**；MutationObserver 去节流、监听 childList+subtree+
+  attributes（含 style——SPA 用 display/opacity 切换表单时 class 监听会漏）；
+- 注入时机：did-finish-load → 增加 **dom-ready**（更早开始检测）；
+- 抛弃所有等待/成功/错误/超时/重试逻辑——检测到可见密码框 → 填表登录一次 → 清理。
+- CDP 实测：表单显示后 **200ms 内**填表+提交，仅一次。
+
+**v0.1.17（FN Connect 仅 remoteUrl 修复）**：
+- 用户 settings 仅保留 remoteUrl（serverUrl 空）时，FN Connect 302 到内网
+  /music/login，页面 origin（内网）不在 trustedOrigins（仅 fnos.net）→
+  页面侧校验失败 → 脚本静默退出（v0.1.14 主 frame 信任被页面侧校验又挡回）；
+- 修复：页面侧 origin 校验仅对**子 frame** 严格（isMain 参数）——主 frame 是
+  用户配置地址的导航结果，主进程已信任，跳过页面侧校验；
+- CDP 端到端验证（仅 remoteUrl）：自动填表 测试账号 + 提交 1 次成功。
+
+**真机验证建议**：v0.1.17 仅配置 remoteUrl 时 FN Connect 登录页应自动填写提交；
+打开应用后主窗口正常显示（若仍感"托盘启动"，多为 FN Connect 加载慢期间窗口
+显示加载状态所致）。

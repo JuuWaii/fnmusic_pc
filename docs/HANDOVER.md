@@ -10,7 +10,7 @@
 **fnmusic_pc**：飞牛音乐（fnOS Music）网页的 Electron PC 客户端——网页嵌套播放、登录态保持、FN Connect 远程访问、音频输出设备与音量调节、系统托盘后台运行。
 
 - 工作目录：`D:\ai\DeepSeek Harness\fnmusic_pc`
-- 飞牛服务（用户内网）：`http://INTRA_IP:5666`，**音乐实际入口 = 门户根地址 + /music**
+- 飞牛服务（用户内网）：`http://<内网IP>:5666`（真实地址见 gitignore 的 dev.config.json），**音乐实际入口 = 门户根地址 + /music**
 - 用户机器：Windows 11（build 26200）；另有第二台电脑用于安装版测试（该机 GPU 渲染异常会黑屏）
 
 ## 2. 原始需求（10 条，全部落地）
@@ -77,7 +77,7 @@
 8. **每轮修复必须三轮审查**（用户流程要求）：A 功能正确性 / B 整体回归与需求 / C 安全隐私；审查常发现 P0 级回归（如 XHR 钩子引用已删常量）。
 
 ### 5.3 隐私红线（用户硬性要求）
-- 仓库不得出现真实 IP（INTRA_IP）、凭据、FN Connect 域名、cookie/token——check-privacy 扫描 + 历史重建保障；
+- 仓库不得出现真实 IP、凭据、FN Connect 域名、cookie/token——check-privacy 扫描 + 历史重建保障；
 - 真实地址只在 gitignore 的 `dev.config.json` 与 `新建 文本文档.txt`（用户任务笔记，勿动勿提交）；
 - 日志/诊断对 URL 脱敏（sanitizeUrl：剥 query/hash、token 打码）、userData 路径 %USERPROFILE% 化。
 

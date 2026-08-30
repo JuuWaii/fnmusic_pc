@@ -50,6 +50,12 @@ function prettyLabel(device) {
 
 /**
  * 枚举当前可用的音频输出设备
+ *
+ * v0.1.10 修复：飞牛门户可能把音乐应用渲染在（跨域）iframe 中，主 frame 的
+ * navigator.mediaDevices 可能不可用（非安全上下文/无权限策略）——因此枚举
+ * 遍历「主 frame + 全部子 frame」，任一 frame 成功即返回；全部失败时聚合
+ * 各 frame 的错误原因，便于诊断。
+ *
  * @param {import('electron').WebContents | null} guestWc guest 页面的 webContents
  * @returns {Promise<{ok:boolean, devices?:{deviceId:string,label:string}[], error?:string}>}
  */
@@ -62,19 +68,36 @@ async function listDevices(guestWc) {
   if (!/^https?:/.test(currentUrl) || guestWc.isLoading()) {
     return { ok: false, error: '页面加载中，请稍后再试' };
   }
+  // 收集全部 frame（主 frame + framesInSubtree 覆盖 iframe 嵌套）
+  const frames = [];
   try {
-    const result = await guestWc.executeJavaScript(ENUMERATE_SNIPPET, true);
-    if (result && result.ok && Array.isArray(result.devices)) {
-      return {
-        ok: true,
-        devices: result.devices.map((d) => ({ deviceId: d.deviceId, label: prettyLabel(d) })),
-      };
+    if (guestWc.mainFrame) {
+      frames.push(guestWc.mainFrame);
+      for (const f of guestWc.mainFrame.framesInSubtree || []) {
+        if (f !== guestWc.mainFrame) frames.push(f);
+      }
     }
-    return { ok: false, error: (result && result.error) || '未知错误' };
-  } catch (e) {
-    logger.warn('枚举音频设备失败:', e && e.message);
-    return { ok: false, error: '枚举失败：' + ((e && e.message) || e) };
+  } catch { /* 枚举 frame 失败则退回仅主 frame */ }
+  if (!frames.length) {
+    return { ok: false, error: '页面 frame 不可用，请刷新后重试' };
   }
+  const errors = [];
+  for (const frame of frames) {
+    try {
+      const result = await frame.executeJavaScript(ENUMERATE_SNIPPET, true);
+      if (result && result.ok && Array.isArray(result.devices)) {
+        return {
+          ok: true,
+          devices: result.devices.map((d) => ({ deviceId: d.deviceId, label: prettyLabel(d) })),
+        };
+      }
+      errors.push((result && result.error) || '未知错误');
+    } catch (e) {
+      errors.push('执行失败: ' + ((e && e.message) || e));
+    }
+  }
+  logger.warn('枚举音频设备失败（全部 frame）:', errors.join(' | '));
+  return { ok: false, error: '设备枚举失败：' + errors[0] + (errors.length > 1 ? '（共 ' + errors.length + ' 个 frame 尝试）' : '') };
 }
 
 /**

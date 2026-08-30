@@ -286,19 +286,39 @@ function register(ctx) {
     const result = { page: null, logTail: '', logDir: logDir || null };
     // 多 frame 聚合诊断（含 iframe；注入失败记录一并返回）
     result.page = await windowManager.diagnoseAllFrames();
-    // 登录态诊断：cookie 数量 + localStorage 占用（排查"每次重新登录"；
+    // 登录态诊断：cookie 数量（按域名分组，排查"每次重新登录"；
     // localStorage 型登录态不受 cookie flush 保护——审查轮 M4）
     try {
       const cookies = await guestSession.cookies.get({});
       result.cookieCount = cookies.length;
+      // 按域名汇总（v0.1.10：定位登录态落在哪个域——iframe 跨域场景下
+      // 主 frame 域与音乐应用域不同）
+      const byDomain = {};
+      const detail = [];
+      for (const c of cookies) {
+        const d = c.domain || '';
+        byDomain[d] = (byDomain[d] || 0) + 1;
+        // 持久化属性（v0.1.10：session cookie 在部分场景重启后丢失，
+        // 定位"每次打开仍需登录"的关键）
+        detail.push({ domain: d, name: String(c.name || '').slice(0, 30), session: !!c.session, expiry: c.expirationDate || 0 });
+      }
+      result.cookieByDomain = byDomain;
+      result.cookieDetail = detail.slice(0, 30);
     } catch { result.cookieCount = -1; }
     if (wc && !wc.isDestroyed()) {
+      // localStorage 按 frame 逐域收集（v0.1.10：iframe 跨域场景下登录态
+      // 可能落在子 frame 域——只查主 frame 会漏报）
+      const lsCode = '(() => { try { let n = 0, len = 0; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k) { n++; len += (k.length + String(localStorage.getItem(k) || "").length); } } return { keys: n, bytes: len }; } catch (e) { return { error: String(e && e.message || e) }; } })()';
+      const frames = [wc.mainFrame];
       try {
-        result.localStorage = await wc.executeJavaScript(
-          '(() => { try { let n = 0, len = 0; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k) { n++; len += (k.length + String(localStorage.getItem(k) || "").length); } } return { keys: n, bytes: len }; } catch (e) { return { error: String(e && e.message || e) }; } })()',
-          true
-        );
-      } catch { result.localStorage = { error: '不可用' }; }
+        for (const f of wc.mainFrame.framesInSubtree || []) {
+          if (f !== wc.mainFrame) frames.push(f);
+        }
+      } catch { /* 忽略 */ }
+      const lsResults = await Promise.allSettled(
+        frames.map((frame) => frame.executeJavaScript(lsCode, true).then((d) => ({ url: serverUrl.sanitizeUrl(frame.url || ''), data: d })).catch((e) => ({ url: serverUrl.sanitizeUrl(frame.url || ''), data: { error: e && e.message } })))
+      );
+      result.localStorageByFrame = lsResults.filter((s) => s.status === 'fulfilled' && s.value).map((s) => s.value);
     }
     // 日志尾部（脱敏后展示，审查轮 C L1/L2：抹掉 URL query/token）
     try {

@@ -49,6 +49,11 @@ if (typeof window !== 'undefined') {
       masterGains: 0,
       sinkResults: [], // 最近 20 条 setSinkId 结果
       initErrors: initErrors,
+      // v0.1.10 新增：mediaDevices 可用性 + 安全上下文（定位「设备枚举失败：
+      // mediaDevices API 不可用」——飞牛门户可能把音乐应用渲染在跨域 iframe，
+      // iframe 内受 Permissions-Policy 限制时 navigator.mediaDevices 为 undefined）
+      mediaDevices: false,
+      secureContext: false,
     };
 
     function diagPush(kind, ok, detail) {
@@ -63,6 +68,9 @@ if (typeof window !== 'undefined') {
       diag.volume = volume;
       diag.contexts = liveContexts.length;
       diag.contextStates = liveContexts.map((c) => c && c.state ? c.state : 'unknown');
+      diag.mediaDevices = typeof navigator !== 'undefined' && !!navigator.mediaDevices
+        && typeof navigator.mediaDevices.enumerateDevices === 'function';
+      diag.secureContext = typeof window !== 'undefined' && !!window.isSecureContext;
       return diag;
     };
     window.__fnmusicSetSinkNow = (deviceId) => {

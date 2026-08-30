@@ -57,7 +57,16 @@ function makeWebContentsStub() {
     send(ch, data) { this._sent.push({ ch, data }); },
     on() {},
     once() {},
-    mainFrame: { framesInSubtree: [], executeJavaScript: async () => {} },
+    mainFrame: {
+      framesInSubtree: [],
+      url: 'http://127.0.0.1:5666/',
+      executeJavaScript: async (code) => {
+        if (String(code).includes('enumerateDevices')) {
+          return { ok: true, devices: [{ deviceId: 'dev-1', label: '扬声器' }, { deviceId: 'dev-2', label: '耳机' }] };
+        }
+        return 2;
+      },
+    },
     executeJavaScript: async (code) => {
       if (String(code).includes('enumerateDevices')) {
         return { ok: true, devices: [{ deviceId: 'dev-1', label: '扬声器' }, { deviceId: 'dev-2', label: '耳机' }] };

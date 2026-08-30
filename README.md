@@ -107,17 +107,17 @@ src/
 │   ├── main.js           # 入口：生命周期、单实例、冒烟测试
 │   ├── window-manager.js # 壳窗口 + WebContentsView（网页承载）
 │   ├── guest-preload.js  # 注入网页的隔离世界脚本（音频设备/进度上报/消息桥，零侵入）
-│   ├── guest-mainworld.js # 注入网页主世界的脚本（AudioContext 定向 / 歌词嗅探）
+│   ├── guest-mainworld.js # 注入网页主世界的脚本（AudioContext 定向 / 音量控制）
 │   ├── settings.js       # 设置持久化（userData/settings.json）
 │   ├── server-url.js     # 地址校验与解析（本地 / FN Connect）
 │   ├── audio-devices.js  # 音频输出设备枚举与切换
 │   ├── security.js       # 权限 / 证书 / 新窗口策略
 │   └── ipc.js            # IPC 总线
 ├── renderer/             # 壳页面（本地页面，非网页）
-│   ├── toolbar.*         # 顶栏（导航 / 设备 / 歌词 / 设置）
+│   ├── toolbar.*         # 顶栏（导航 / 设备 / 设置）
 │   ├── welcome.*         # 欢迎配置页
 │   ├── settings.*        # 设置页
-│   └── lyrics.*          # 桌面歌词悬浮窗
+│   └── audio-panel.*     # 音频调节面板（设备 / 音量）
 └── preload.js            # contextBridge 白名单桥
 ```
 

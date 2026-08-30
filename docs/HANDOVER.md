@@ -46,7 +46,7 @@
 - **安全上下文**：`unsafely-treat-insecure-origin-as-secure` 标记已配置 http 来源（否则 mediaDevices 不可用）
 - **托盘**：X 关闭最小化到托盘（可关）、菜单（显示/隐藏/设置/退出）、单实例恢复窗口
 
-## 4. 版本历史（git 35 提交）
+## 4. 版本历史（git 46 提交）
 
 - **v0.1.0** 初始：网页嵌套/登录态/cookie 持久化/欢迎页/设备/歌词框架/托盘前身
 - **v0.1.1** 黑屏修复：禁用硬件加速 + ready-to-show 兜底
@@ -111,7 +111,7 @@
 
 ```powershell
 cd D:\ai\DeepSeek Harness\fnmusic_pc
-npm test                 # 无头测试（55 项）
+npm test                 # 无头测试（60 项）
 npm run check:privacy    # 隐私合规检查
 npm start                # 源码启动（真机；控制台可见日志）
 npm run smoke            # 冒烟测试（真机；自动加载自检退出）

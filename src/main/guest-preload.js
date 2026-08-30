@@ -27,6 +27,7 @@ if (/^https?:$/.test(window.location.protocol)) {
 
 /** 全局状态 */
 let targetDeviceId = '';        // 当前目标音频输出设备 id（'' = 跟随系统）
+let targetVolume = 1;           // 目标音量（0~1，应用于媒体元素）
 let lyricsEnabled = false;      // 桌面歌词开关
 let stateTimer = null;          // 播放进度上报定时器
 const appliedMedia = new WeakMap();    // el -> 已应用的 deviceId（WeakMap 自动回收，防泄漏）
@@ -44,6 +45,19 @@ function initGuest() {
     }
   });
 
+  // 1.5) 主进程指令：音量（媒体元素路径 + 转发主世界）
+  // 注意：仅在显式指令时应用一次，绝不周期性强制写回 el.volume——
+  // 否则会覆盖页面自身的音量控件（审查轮 B2 修复）。
+  ipcRenderer.on('fnmusic:set-volume', (_event, payload) => {
+    if (payload && typeof payload.value === 'number' && Number.isFinite(payload.value)) {
+      targetVolume = Math.min(1, Math.max(0, payload.value));
+      applyVolumeToMedia();
+      try {
+        window.postMessage({ __fnmusicSetVolume: { value: targetVolume } }, '*');
+      } catch { /* 忽略 */ }
+    }
+  });
+
   // 2) 主进程指令：桌面歌词开关（控制进度上报）
   ipcRenderer.on('fnmusic:lyrics-enabled', (_event, payload) => {
     const enabled = Boolean(payload && payload.enabled);
@@ -52,7 +66,7 @@ function initGuest() {
     if (lyricsEnabled) startStateTimer(); else stopStateTimer();
   });
 
-  // 3) 主世界 → 本世界 → 主进程 的歌词桥
+  // 3) 主世界 → 本世界 → 主进程 的桥（歌词 + WebAudio 播放进度）
   window.addEventListener('message', (e) => {
     if (!e || e.source !== window) return; // 仅接受本窗口消息，防 iframe 伪造
     const d = e && e.data;
@@ -60,6 +74,17 @@ function initGuest() {
     const l = d.__fnmusicLyrics;
     if (l && typeof l.lrc === 'string' && l.lrc.length > 0) {
       reportLyrics([{ track: typeof l.track === 'string' ? l.track : '', lrc: l.lrc }]);
+    }
+    // WebAudio 播放器没有媒体元素，进度由主世界脚本上报（歌词时间轴）
+    const st = d.__fnmusicAudioState;
+    if (st && typeof st.currentTime === 'number') {
+      ipcRenderer.send('fnmusic:audio-state', {
+        playing: Boolean(st.playing),
+        currentTime: st.currentTime,
+        duration: typeof st.duration === 'number' ? st.duration : 0,
+        paused: Boolean(st.paused),
+        title: typeof st.title === 'string' ? st.title : (document.title || ''),
+      });
     }
   });
 
@@ -144,6 +169,15 @@ function logSinkResult(kind, ok, detail) {
 /** 对当前页面所有媒体元素应用输出设备 */
 function applyToAllMedia() {
   for (const el of findMediaElements(document)) applyToMediaElement(el);
+  // 注意：此处不再调用 applyVolumeToMedia（音量仅在显式指令时应用，
+  // 避免周期性覆盖页面自身的音量控件——审查轮 B2）
+}
+
+/** 应用目标音量到媒体元素（仅在收到显式指令时调用） */
+function applyVolumeToMedia() {
+  for (const el of findMediaElements(document)) {
+    try { el.volume = targetVolume; } catch { /* 忽略 */ }
+  }
 }
 
 /* ==================== 播放进度上报（歌词窗口驱动） ==================== */

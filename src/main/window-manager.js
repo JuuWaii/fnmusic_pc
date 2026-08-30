@@ -220,10 +220,13 @@ function createGuestView() {
     frame
       .executeJavaScript(script)
       .then(() => {
-        // 注入后立即回放已保存的音频输出设备（新 frame 没收到过切换消息）
-        const deviceId = settings.getAll().audioDeviceId || '';
+        // 注入后立即回放已保存的音频输出设备与音量（新 frame 没收到过切换消息）
+        const s = settings.getAll();
+        const deviceId = s.audioDeviceId || '';
+        const volume = typeof s.volume === 'number' ? s.volume : 1;
         return frame.executeJavaScript(
-          'window.__fnmusicSetSinkNow && window.__fnmusicSetSinkNow(' + JSON.stringify(deviceId) + ');'
+          'window.__fnmusicSetSinkNow && window.__fnmusicSetSinkNow(' + JSON.stringify(deviceId) + ');' +
+          'window.__fnmusicSetVolume && window.__fnmusicSetVolume(' + JSON.stringify(volume) + ');'
         );
       })
       .catch((e) => {
@@ -488,8 +491,8 @@ async function diagnoseAllFrames() {
   const tasks = frames.map((frame) =>
     frame
       .executeJavaScript(code, true)
-      .then((d) => ({ url: frame.url || '', data: d }))
-      .catch((e) => ({ url: frame.url || '', data: { injected: false, error: e && e.message } }))
+      .then((d) => ({ url: serverUrl.sanitizeUrl(frame.url || ''), data: d }))
+      .catch((e) => ({ url: serverUrl.sanitizeUrl(frame.url || ''), data: { injected: false, error: e && e.message } }))
   );
   const settled = await Promise.allSettled(tasks);
   for (const s of settled) {

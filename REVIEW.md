@@ -95,3 +95,20 @@ B3 托盘未创建时 second-instance 兜底；B12 歌词窗被系统关闭后�
 审查轮 C（安全隐私）：L1 日志 URL 脱敏（query/hash 剥离 + token 形参打码）；L2 诊断 logTail
 展示前脱敏；L3 移除歌名日志；L4 日志 1MB 轮转留 5 份；L5 liveContexts 清理；L6 title 截断；
 L7 托盘常驻行为文档化。隐私合规复检通过（43 文件 0 违规）。
+
+## 审查轮 6：音频调节面板 + 音量系统 + 歌词捕获（三轮审查 A/B/C）
+
+本轮功能：独立音频调节面板（设备即选即生效 + 音量滑块实时生效）、音量系统（WebAudio
+master gain + 媒体元素双通道）、歌词捕获改进（全量 JSON 嗅探 + WebSocket 钩子 + 诊断统计）。
+
+审查发现与处置：
+- P0（C1/B1）：XHR 钩子引用已删除常量 LYRIC_URL_HINT，页面所有 XHR 请求崩溃——已修复并补充浏览器桩回归测试（60 项套件）；
+- P1（B2/M1）：音量周期性强制写回媒体元素，覆盖页面自身音量控件——改为仅在显式指令时应用；
+- H1：WebSocket 钩子破坏 removeEventListener/once、onmessage 未覆盖——WeakMap 双向映射 + onmessage 属性钩子 + options 透传 + 二进制帧解码；
+- H2/B3：动态 iframe 注入不回放音量——注入后并列回放设备与音量；
+- M2：destination 换包后 disconnect() 会导致静音——master.disconnect 拦截自动重连；类型差异接受并注记；
+- B4：音量滑块高频 IPC/写盘——rAF 节流；B5：全 JSON 嗅探无预算——text() 长度预检 + 字段变体放宽；
+- L1：NaN 音量静音不一致——各层 Number.isFinite 校验，非法载荷忽略；
+- WebAudio 时间轴：纯 WebAudio 播放器无媒体元素、进度恒 0——主世界按 ctx.currentTime 上报；
+- 安全：面板窗口补齐 setWindowOpenHandler；诊断 frame.url 脱敏；IPC 校验复检通过；
+- 隐私：check-privacy 通过；新增文件无敏感信息。

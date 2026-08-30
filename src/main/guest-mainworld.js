@@ -35,7 +35,7 @@ function scanForLyrics(obj) {
     }
     for (const key of Object.keys(node)) {
       const v = node[key];
-      if (typeof v === 'string' && /^(lyric|lyrics|lrc|songlyric|song_lyric|lyricText)$/i.test(key)) {
+      if (typeof v === 'string' && /^(lyric|lyrics|lrc|songlyric|song_lyric|lyricText|lyricContent|lyricTxt|lrcText|lyric_text|lyrics_text|musicLyric)$/i.test(key)) {
         if (v.length >= 10 && v.includes('[') && v.includes(']')) {
           results.push({ track: '', lrc: v });
           break;
@@ -79,6 +79,7 @@ if (typeof window !== 'undefined') {
     window.__fnmusicMainworld = true;
 
     let sinkId = ''; // 当前目标音频输出设备
+    let volume = 1;    // 当前音量（0~1，作用于页面播放器输出）
 
     /* ---- 诊断统计（供主进程 /app:diagnose-audio 读取） ---- */
     const diag = {
@@ -159,6 +160,7 @@ if (typeof window !== 'undefined') {
         }
         liveContexts.push(ctx);
         diag.contexts = liveContexts.length;
+        patchMasterGain(ctx);
         if (!sinkId || ctx.sinkId !== sinkId) {
           // 构造期未生效（无设备/不支持/已运行）：延后一帧补应用
           setTimeout(() => {
@@ -173,6 +175,59 @@ if (typeof window !== 'undefined') {
       window.AudioContext = PatchedAC;
       if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
       diag.audioContextPatched = true;
+    }
+
+    /**
+     * 为 AudioContext 挂载「主音量增益节点」。
+     *
+     * 原理：页面播放器（WebAudio）把音频节点 connect 到 ctx.destination；
+     * 我们在实例上覆盖 destination getter 返回一个 GainNode（master gain），
+     * 并把它 connect 到真正的 destination。此后页面所有音频都经过该增益节点，
+     * 客户端即可统一控制音量（音量滑块同步网页播放器输出）。
+     * 兼容性：仅影响 connect 目标（GainNode 具备 destination 的常用方法），
+     * 对页面逻辑无其他影响。
+     */
+    function patchMasterGain(ctx) {
+      try {
+        if (!ctx || ctx.__fnMasterGain) return;
+        if (typeof ctx.createGain !== 'function' || !ctx.destination) return;
+        const realDest = ctx.destination;
+        const master = ctx.createGain();
+        master.gain.value = volume;
+        master.connect(realDest);
+        Object.defineProperty(ctx, 'destination', {
+          configurable: true,
+          enumerable: false,
+          get: () => master,
+        });
+        // M2 防护：页面若对 destination 调用 disconnect()（常见"清空输出"逻辑），
+        // 会把 master 与真实输出的连接切断导致无声——拦截并自动重连。
+        try {
+          const origDisconnect = master.disconnect && master.disconnect.bind(master);
+          if (origDisconnect) {
+            master.disconnect = function (...disArgs) {
+              origDisconnect(...disArgs);
+              try { master.connect(realDest); } catch { /* 已连接则忽略 */ }
+            };
+          }
+        } catch { /* 忽略 */ }
+        ctx.__fnMasterGain = master;
+        diag.masterGains = (diag.masterGains || 0) + 1;
+      } catch { /* 不支持时静默跳过（音量控制降级） */ }
+    }
+
+    /** 应用音量到全部音频上下文与媒体元素 */
+    function applyVolume() {
+      for (const ctx of liveContexts) {
+        if (ctx.__fnMasterGain && ctx.__fnMasterGain.gain) {
+          try { ctx.__fnMasterGain.gain.value = volume; } catch { /* 忽略 */ }
+        }
+      }
+      try {
+        document.querySelectorAll('audio, video').forEach((el) => {
+          try { el.volume = volume; } catch { /* 忽略 */ }
+        });
+      } catch { /* 忽略 */ }
     }
 
     /**
@@ -306,12 +361,16 @@ if (typeof window !== 'undefined') {
         applySinkToElements();
         applySinkToContexts();
       }
+      if (d.__fnmusicSetVolume && typeof d.__fnmusicSetVolume.value === 'number') {
+        window.__fnmusicSetVolume(d.__fnmusicSetVolume.value);
+      }
     });
 
     // 主进程诊断读取接口
     window.__fnmusicDiagnose = () => {
       diag.iframes = document.querySelectorAll('iframe').length;
       diag.sinkId = sinkId;
+      diag.volume = volume;
       diag.contexts = liveContexts.length;
       diag.contextStates = liveContexts.map((c) => c && c.state ? c.state : 'unknown');
       return diag;
@@ -325,6 +384,31 @@ if (typeof window !== 'undefined') {
         applySinkToContexts();
       }
     };
+    // 设置音量（0~1，立即作用于页面播放器输出）
+    window.__fnmusicSetVolume = (v) => {
+      volume = Math.min(1, Math.max(0, Number(v) || 0));
+      applyVolume();
+      return volume;
+    };
+
+    // WebAudio 播放进度上报（歌词时间轴；媒体元素路径由隔离世界 preload 上报）
+    setInterval(() => {
+      if (!liveContexts.length) return;
+      let playing = null;
+      for (const ctx of liveContexts) {
+        if (ctx.state === 'running') { playing = ctx; break; }
+      }
+      if (!playing) return; // 无正在播放的上下文时不打扰主进程
+      window.postMessage({
+        __fnmusicAudioState: {
+          playing: true,
+          currentTime: typeof playing.currentTime === 'number' ? playing.currentTime : 0,
+          duration: 0, // WebAudio 无总时长概念，交由歌词窗口按行推进
+          paused: false,
+          title: document.title || '',
+        },
+      }, '*');
+    }, 1000);
 
     // 动态创建的媒体元素（rAF 去抖）
     if (typeof MutationObserver !== 'undefined') {
@@ -346,37 +430,131 @@ if (typeof window !== 'undefined') {
         const hash = item.lrc.length + ':' + item.lrc.slice(0, 200);
         if (hash === lastLyricHash) continue;
         lastLyricHash = hash;
+        diag.lyricsHits++;
         window.postMessage({ __fnmusicLyrics: { track: item.track || '', lrc: item.lrc } }, '*');
       }
     }
 
-    // 疑似歌词接口的 URL 关键字（先过滤再解析，避免嗅探所有响应）
-    const LYRIC_URL_HINT = /(lyric|lrc|song|track|music|audio)/i;
+    // 歌词捕获统计（诊断用）
+    diag.lyricsScanned = 0;
+    diag.lyricsHits = 0;
+
     const MAX_RESPONSE = 5 * 1024 * 1024; // 超过 5MB 的响应跳过
+
+    /**
+     * 对 JSON 对象做歌词嗅探并上报（去重）。
+     * 不再按 URL 关键字过滤：飞牛歌词接口路径未知，放宽到全部 JSON 响应
+     * （大小与扫描预算已在 scanForLyrics 内限制，性能可控）。
+     */
+    function sniffJson(data) {
+      if (!data || typeof data !== 'object') return;
+      const found = scanForLyrics(data);
+      if (found) reportLyrics(found);
+    }
 
     const origFetch = window.fetch;
     if (typeof origFetch === 'function') {
       diag.fetchHooked = true;
       window.fetch = function (...args) {
         const p = origFetch.apply(this, args);
-        try {
-          const url = String(args[0] && typeof args[0] === 'object' ? args[0].url : args[0]);
-          if (!LYRIC_URL_HINT.test(url)) return p;
-        } catch { return p; }
         p.then((resp) => {
           try {
             const ct = resp && resp.headers ? (resp.headers.get('content-type') || '') : '';
             if (!ct.includes('json')) return;
             const len = resp.headers.get('content-length');
             if (len && Number(len) > MAX_RESPONSE) return;
-            resp.clone().json().then((data) => {
-              const found = scanForLyrics(data);
-              if (found) reportLyrics(found);
+            // 无 content-length 头（chunked）时用文本长度预检（审查轮 B5）
+            resp.clone().text().then((text) => {
+              if (!text || text.length > MAX_RESPONSE) return;
+              diag.lyricsScanned++;
+              sniffJson(JSON.parse(text));
             }).catch(() => {});
           } catch { /* 忽略 */ }
         }).catch(() => {});
         return p;
       };
+    }
+
+    // WebSocket 消息钩子（歌词可能走 WS 通道；审查轮 H1 修复）
+    const OrigWS = window.WebSocket;
+    if (OrigWS && OrigWS.prototype && typeof OrigWS.prototype.addEventListener === 'function') {
+      diag.wsHooked = true;
+      // 原始 listener -> 包装 listener 的双向映射（保证 removeEventListener 可用、once 生效）
+      const wsWrapMap = new WeakMap();
+      const origAddEventListener = OrigWS.prototype.addEventListener;
+      const origRemoveEventListener = OrigWS.prototype.removeEventListener;
+
+      const wrapWsListener = function (listener) {
+        if (typeof listener !== 'function' || wsWrapMap.has(listener)) return listener;
+        const wrapped = function (event) {
+          try {
+            const data = event && event.data;
+            if (typeof data === 'string' && data.length < MAX_RESPONSE) {
+              const obj = JSON.parse(data);
+              diag.lyricsScanned++;
+              sniffJson(obj);
+            } else if (event && event.data && typeof event.data.arrayBuffer === 'function') {
+              // 二进制帧：尝试按 UTF-8 解码后嗅探（受限，仅小帧）
+              event.data.arrayBuffer().then((buf) => {
+                try {
+                  if (buf && buf.byteLength && buf.byteLength < 512 * 1024) {
+                    const text = new TextDecoder().decode(buf);
+                    if (text && text.length < MAX_RESPONSE) {
+                      const obj = JSON.parse(text);
+                      diag.lyricsScanned++;
+                      sniffJson(obj);
+                    }
+                  }
+                } catch { /* 非 JSON 忽略 */ }
+              }).catch(() => {});
+            }
+          } catch { /* 非 JSON 消息忽略 */ }
+          return listener.apply(this, arguments);
+        };
+        wsWrapMap.set(listener, wrapped);
+        return wrapped;
+      };
+
+      OrigWS.prototype.addEventListener = function (type, listener, options) {
+        if (type === 'message') {
+          listener = wrapWsListener(listener);
+        }
+        // 透传第三个参数（once/capture/AbortSignal）
+        return origAddEventListener.call(this, type, listener, options);
+      };
+      OrigWS.prototype.removeEventListener = function (type, listener) {
+        if (type === 'message' && wsWrapMap.has(listener)) {
+          listener = wsWrapMap.get(listener);
+        }
+        return origRemoveEventListener.call(this, type, listener);
+      };
+
+      // 钩住 onmessage 属性赋值路径
+      try {
+        const desc = Object.getOwnPropertyDescriptor(OrigWS.prototype, 'onmessage');
+        if (desc && desc.set) {
+          const origSet = desc.set;
+          desc.set = function (fn) {
+            if (typeof fn === 'function') {
+              const wrapped = function (event) {
+                // 复用与 addEventListener 相同的处理逻辑：直接调用包装函数体
+                try {
+                  const data = event && event.data;
+                  if (typeof data === 'string' && data.length < MAX_RESPONSE) {
+                    const obj = JSON.parse(data);
+                    diag.lyricsScanned++;
+                    sniffJson(obj);
+                  }
+                } catch { /* 忽略 */ }
+                return fn.apply(this, arguments);
+              };
+              return origSet.call(this, wrapped);
+            }
+            return origSet.call(this, fn);
+          };
+          Object.defineProperty(OrigWS.prototype, 'onmessage', desc);
+        }
+      } catch { /* 属性不可写时跳过（不影响其他钩子） */ }
     }
 
     const XHR = window.XMLHttpRequest;
@@ -390,24 +568,23 @@ if (typeof window !== 'undefined') {
       };
       XHR.prototype.send = function (...args) {
         const self = this;
-        if (LYRIC_URL_HINT.test(self.__fnmusicUrl || '')) {
-          this.addEventListener('load', () => {
-            try {
-              if (self.status !== 200) return;
-              const ct = String(self.getResponseHeader('content-type') || '');
-              if (!ct.includes('json')) return;
-              let text = null;
-              if (self.responseType === 'json' && self.response) {
-                text = JSON.stringify(self.response);
-              } else if (typeof self.responseText === 'string') {
-                text = self.responseText;
-              }
-              if (!text || text.length > MAX_RESPONSE) return;
-              const found = scanForLyrics(JSON.parse(text));
-              if (found) reportLyrics(found);
-            } catch { /* 忽略 */ }
-          });
-        }
+        // 全量嗅探（与 fetch 一致，不再按 URL 关键字过滤；审查轮 C1 修复）
+        this.addEventListener('load', () => {
+          try {
+            if (self.status !== 200) return;
+            const ct = String(self.getResponseHeader('content-type') || '');
+            if (!ct.includes('json')) return;
+            let text = null;
+            if (self.responseType === 'json' && self.response) {
+              text = JSON.stringify(self.response);
+            } else if (typeof self.responseText === 'string') {
+              text = self.responseText;
+            }
+            if (!text || text.length > MAX_RESPONSE) return;
+            diag.lyricsScanned++;
+            sniffJson(JSON.parse(text));
+          } catch { /* 忽略 */ }
+        });
         return origSend.apply(this, args);
       };
     }

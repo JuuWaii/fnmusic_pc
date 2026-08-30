@@ -22,6 +22,8 @@ const security = require('./security');
 
 /** 设置窗口 */
 let settingsWindow = null;
+/** 音频调节面板窗口（独立小窗：设备 + 音量，即选即生效） */
+let audioPanelWindow = null;
 
 /** 打开设置窗口（welcome=true 时为「欢迎/首次配置」模式） */
 function openSettingsWindow(welcome) {
@@ -60,6 +62,42 @@ function openSettingsWindow(welcome) {
   });
   settingsWindow.once('ready-to-show', () => settingsWindow.show());
   settingsWindow.on('closed', () => { settingsWindow = null; });
+}
+
+/** 打开音频调节面板（独立小窗；设备/音量调整即时生效，无需保存） */
+function openAudioPanelWindow() {
+  if (audioPanelWindow && !audioPanelWindow.isDestroyed()) {
+    audioPanelWindow.focus();
+    return;
+  }
+  audioPanelWindow = new BrowserWindow({
+    width: 420,
+    height: 320,
+    resizable: false,
+    show: false,
+    autoHideMenuBar: true,
+    title: '音频调节 - FN Music PC',
+    backgroundColor: '#f5f6f8',
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'renderer', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+      devTools: !app.isPackaged,
+    },
+  });
+  audioPanelWindow.webContents.on('will-navigate', (e) => e.preventDefault());
+  // 与设置窗口一致：外链一律交给系统浏览器
+  audioPanelWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) {
+      require('electron').shell.openExternal(url).catch(() => {});
+    }
+    return { action: 'deny' };
+  });
+  audioPanelWindow.loadFile(path.join(__dirname, '..', 'renderer', 'audio-panel.html'));
+  audioPanelWindow.once('ready-to-show', () => audioPanelWindow.show());
+  audioPanelWindow.on('closed', () => { audioPanelWindow = null; });
 }
 
 /**
@@ -182,6 +220,17 @@ function register(ctx) {
     return settings.getAll().audioDeviceId;
   });
 
+  /* ---------- 音量 ---------- */
+  ipcMain.handle('volume:set', (event, payload) => {
+    if (!isTrustedShellSender(event)) return null;
+    const v = payload && payload.value;
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+      return settings.getAll().volume; // 非法载荷：忽略（不静音不清零）
+    }
+    audioDevices.setVolume(windowManager.getGuestWebContents(), v);
+    return settings.getAll().volume;
+  });
+
   /* ---------- 导航 ---------- */
   ipcMain.handle('nav:action', (event, action) => {
     if (!isTrustedShellSender(event)) return;
@@ -277,9 +326,17 @@ function register(ctx) {
     if (isTrustedShellSender(event)) windowManager.pushStatus();
   });
 
-  /* ---------- 设置窗口 ---------- */
+  /* ---------- 设置窗口 / 音频面板 ---------- */
   ipcMain.on('settings:open', (event, welcome) => {
     if (isTrustedShellSender(event)) openSettingsWindow(Boolean(welcome));
+  });
+  ipcMain.on('audio-panel:open', (event) => {
+    if (isTrustedShellSender(event)) openAudioPanelWindow();
+  });
+  ipcMain.on('audio-panel:close', (event) => {
+    if (isTrustedShellSender(event) && audioPanelWindow && !audioPanelWindow.isDestroyed()) {
+      audioPanelWindow.close();
+    }
   });
   ipcMain.on('settings:close', (event) => {
     if (isTrustedShellSender(event) && settingsWindow && !settingsWindow.isDestroyed()) {
@@ -318,13 +375,20 @@ function notifyGuestLyricsEnabled(enabled) {
   }
 }
 
-/** 页面（重新）加载后回放设置：音频输出设备 + 歌词开关（网页刷新/重启后仍生效） */
+/** 页面（重新）加载后回放设置：音频设备 + 音量 + 歌词开关（刷新/重启后仍生效） */
 function replaySettingsToGuest() {
   const s = settings.getAll();
   const wc = windowManager.getGuestWebContents();
   if (!wc || wc.isDestroyed()) return;
   wc.send('fnmusic:set-audio-device', { deviceId: s.audioDeviceId || '' });
+  wc.send('fnmusic:set-volume', { value: s.volume });
   wc.send('fnmusic:lyrics-enabled', { enabled: Boolean(s.showDesktopLyrics) });
+  // 主世界直接广播（frame 注入后立即生效）
+  audioDevices.broadcastToAllFrames(
+    wc,
+    'window.__fnmusicSetSinkNow && window.__fnmusicSetSinkNow(' + JSON.stringify(s.audioDeviceId || '') + ');' +
+    'window.__fnmusicSetVolume && window.__fnmusicSetVolume(' + JSON.stringify(s.volume) + ');'
+  );
 }
 
-module.exports = { register, openSettingsWindow };
+module.exports = { register, openSettingsWindow, openAudioPanelWindow };

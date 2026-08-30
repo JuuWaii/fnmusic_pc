@@ -24,6 +24,7 @@ const DEFAULTS = Object.freeze({
   lyricsOpacity: 0.9,       // 桌面歌词窗口不透明度 0.3~1
   musicPath: '/music',      // 音乐入口路径：地址路径为空时自动追加（置空则不加）
   minimizeToTray: true,    // 关闭主窗口时最小化到系统托盘（后台继续播放）
+  volume: 1,                // 客户端音量（0~1，作用于网页播放器输出）
 });
 
 /**

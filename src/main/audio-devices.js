@@ -78,23 +78,22 @@ async function listDevices(guestWc) {
 }
 
 /**
- * 向 guest 全部 frame 广播设备切换（审查轮 A P1 修复）
+ * 向 guest 全部 frame 执行一段主世界代码（P1 修复的通用化）。
  *
  * 背景：session.setPreloads 的 preload 默认只在主 frame 运行（nodeIntegrationInSubFrames
  * 默认 false），iframe 内页面的 AudioContext/媒体元素收不到 postMessage 转发。
- * 因此除主 frame 的 preload 通道外，还需直接对每个 frame 的主世界执行
- * __fnmusicSetSinkNow（该函数由注入脚本提供，设备切换时对元素与上下文重定向）。
+ * 因此除主 frame 的 preload 通道外，还需直接对每个 frame 的主世界执行注入脚本暴露
+ * 的函数（设备切换 __fnmusicSetSinkNow / 音量 __fnmusicSetVolume）。
  *
  * @param {import('electron').WebContents} wc
- * @param {string} deviceId
+ * @param {string} code 要在各 frame 主世界执行的 JS
  */
-function broadcastSinkToAllFrames(wc, deviceId) {
+function broadcastToAllFrames(wc, code) {
   if (!wc || wc.isDestroyed() || !wc.mainFrame) return;
   const frames = [wc.mainFrame];
   try {
     for (const f of wc.mainFrame.framesInSubtree || []) frames.push(f);
   } catch { /* 枚举失败不阻塞主路径 */ }
-  const code = 'window.__fnmusicSetSinkNow && window.__fnmusicSetSinkNow(' + JSON.stringify(deviceId) + ');';
   for (const frame of frames) {
     try {
       frame.executeJavaScript(code).catch(() => {});
@@ -114,9 +113,26 @@ function setDevice(guestWc, deviceId) {
     // 主 frame 隔离世界通道（媒体元素记账 + 转发主世界）
     guestWc.send('fnmusic:set-audio-device', { deviceId: id });
     // 全部 frame 主世界直接广播（含 iframe 场景）
-    broadcastSinkToAllFrames(guestWc, id);
+    broadcastToAllFrames(guestWc, 'window.__fnmusicSetSinkNow && window.__fnmusicSetSinkNow(' + JSON.stringify(id) + ');');
   }
   logger.info('音频输出设备已切换:', id === '' ? '系统默认' : id);
 }
 
-module.exports = { listDevices, setDevice, prettyLabel };
+/**
+ * 设置客户端音量并持久化；立即广播到全部 frame 的页面播放器。
+ * @param {import('electron').WebContents | null} guestWc
+ * @param {number} value 0~1
+ */
+function setVolume(guestWc, value) {
+  // NaN/非数字统一忽略（避免 NaN→0 意外静音——审查轮 L1）
+  if (typeof value !== 'number' || !Number.isFinite(value)) return;
+  const v = Math.min(1, Math.max(0, value));
+  settings.update({ volume: v });
+  if (guestWc && !guestWc.isDestroyed()) {
+    guestWc.send('fnmusic:set-volume', { value: v });
+    broadcastToAllFrames(guestWc, 'window.__fnmusicSetVolume && window.__fnmusicSetVolume(' + JSON.stringify(v) + ');');
+  }
+  logger.info('音量已设置:', v);
+}
+
+module.exports = { listDevices, setDevice, setVolume, broadcastToAllFrames, prettyLabel };

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self';" />
+<title>音频调节</title>
+<link rel="stylesheet" href="audio-panel.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1>音频调节</h1>
+
+    <label for="deviceSelect">音频输出设备（选择即生效）</label>
+    <select id="deviceSelect">
+      <option value="">系统默认设备（跟随系统设置）</option>
+    </select>
+    <div id="deviceStatus" class="status"></div>
+
+    <label for="volumeSlider">音量：<span id="volumeValue">100%</span></label>
+    <input type="range" id="volumeSlider" min="0" max="1" step="0.01" />
+    <div class="hint">音量实时作用于飞牛音乐网页播放器输出（与网页播放音量联动）。</div>
+
+    <div class="foot">
+      <button id="btnRefresh">刷新设备</button>
+      <button id="btnClose">关闭</button>
+    </div>
+  </div>
+  <script src="audio-panel.js"></script>
+</body>
+</html>

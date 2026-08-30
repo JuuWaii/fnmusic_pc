@@ -16,9 +16,12 @@ const api = {
   /* ---- 服务器 ---- */
   testServer: (url) => ipcRenderer.invoke('server:test', url),
 
-  /* ---- 音频设备 ---- */
+  /* ---- 音频设备 / 音量 / 面板 ---- */
   listAudioDevices: () => ipcRenderer.invoke('audio:list'),
   setAudioDevice: (deviceId) => ipcRenderer.invoke('audio:set', { deviceId }),
+  setVolume: (value) => ipcRenderer.invoke('volume:set', { value }),
+  openAudioPanel: () => ipcRenderer.send('audio-panel:open'),
+  closeAudioPanel: () => ipcRenderer.send('audio-panel:close'),
 
   /* ---- 导航 ---- */
   navigate: (action) => ipcRenderer.invoke('nav:action', action),

@@ -49,7 +49,7 @@ $('btnLyrics').addEventListener('click', async () => {
   $('btnLyrics').classList.toggle('active', enabled);
 });
 
-/* ---------- 音频输出设备：打开设置页选择 ---------- */
+/* ---------- 音频输出设备/音量：打开独立调节面板 ---------- */
 // 说明：设备下拉菜单会被 guest 网页视图（WebContentsView）原生图层遮挡，
-// 因此设备选择统一收口到「设置」窗口中的音频设备下拉。
-$('btnDevice').addEventListener('click', () => api.openSettings(false));
+// 因此设备与音量调节收口到独立小窗（audio-panel），即选即生效。
+$('btnDevice').addEventListener('click', () => api.openAudioPanel());

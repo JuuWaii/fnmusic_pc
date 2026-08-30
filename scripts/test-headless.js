@@ -400,6 +400,18 @@ console.log('\n[4] ipc 处理器');
     assert.strictEqual(r.ok, true);
     assert.deepStrictEqual(fakeSession._cleared.sort(), ['auth', 'cache', 'storage']);
   });
+  ok('volume:set 正常设置', async () => {
+    const r = await H['volume:set'](shellEvent, { value: 0.3 });
+    assert.strictEqual(r, 0.3);
+  });
+  ok('volume:set 非法载荷被忽略（不静音不清零）', async () => {
+    const before = await H['settings:get'](shellEvent);
+    const r = await H['volume:set'](shellEvent, { value: NaN });
+    assert.strictEqual(r, before.volume, '非法值应保持原音量');
+    const r2 = await H['volume:set'](shellEvent, {});
+    assert.strictEqual(r2, before.volume);
+    await H['volume:set'](shellEvent, { value: 1 }); // 恢复
+  });
   ok('guest 歌词上报：拒绝不可信来源', async () => {
     // 注册的 on 处理器直接触发
     const lyricsHandlers = stub._ipcOns['fnmusic:lyrics'] || [];
@@ -469,7 +481,7 @@ console.log('\n[7] tray 托盘模块');
   });
 }
 
-console.log('\n[8] guest-mainworld 歌词嗅探');
+console.log('\n[8] guest-mainworld 歌词嗅探（纯函数）');
 {
   // guest-mainworld 是纯函数模块（浏览器入口被 window 守卫跳过）
   const gm = require(path.join(ROOT, 'src/main/guest-mainworld.js'));
@@ -495,6 +507,90 @@ console.log('\n[8] guest-mainworld 歌词嗅探');
   ok('scanForLyrics 空输入', () => {
     assert.strictEqual(gm.scanForLyrics(null), null);
     assert.strictEqual(gm.scanForLyrics('text'), null);
+  });
+}
+
+console.log('\n[9] guest-mainworld 浏览器入口（注入脚本关键路径）');
+{
+  // 构造浏览器桩环境后加载注入脚本，验证：XHR 钩子不抛错（P0 回归）、fetch 歌词嗅探、音量 API
+  const savedGlobals = {};
+  const messages = [];
+  const xhrCalls = [];
+
+  class XHRStub {
+    constructor() { this.status = 200; this.responseText = ''; this.responseType = ''; this.response = null; this._listeners = {}; this.__fnmusicUrl = ''; }
+    open(method, url) { this.__fnmusicUrl = String(url); xhrCalls.push({ method, url: String(url) }); }
+    send() { this._sent = true; for (const fn of this._listeners['load'] || []) fn.call(this, {}); }
+    addEventListener(ev, fn) { (this._listeners[ev] = this._listeners[ev] || []).push(fn); }
+    getResponseHeader(name) { return name.toLowerCase() === 'content-type' ? 'application/json' : null; }
+  }
+
+  const fetchStub = async (url) => {
+    if (String(url).includes('lyric-api')) {
+      return {
+        ok: true,
+        headers: { get: (n) => (n.toLowerCase() === 'content-type' ? 'application/json' : '42'), },
+        clone: () => ({ text: async () => JSON.stringify({ data: { lyric: '[00:01.00]fetch lyric line for testing' }, title: 'FetchSong' }) }),
+      };
+    }
+    return { ok: true, headers: { get: () => 'application/json' }, clone: () => ({ text: async () => '{"a":1}' }) };
+  };
+
+  class WsStub { constructor() { } }
+  WsStub.prototype.addEventListener = function () {};
+  WsStub.prototype.removeEventListener = function () {};
+
+  savedGlobals.window = global.window;
+  global.window = {
+    location: { protocol: 'http:', href: 'http://127.0.0.1:5666/music' },
+    addEventListener(ev, fn) { (global.__winListeners = global.__winListeners || {})[ev] = fn; },
+    postMessage(data) { messages.push(data); },
+    setInterval() { return 1; },
+    document: { title: 't', querySelectorAll: () => [], },
+    AudioContext: undefined,
+    fetch: fetchStub,
+    XMLHttpRequest: XHRStub,
+    WebSocket: WsStub,
+    postMessage: (d) => messages.push(d),
+  };
+
+  // 清缓存：确保 IIFE 在当前浏览器桩环境中重新执行
+  delete require.cache[require.resolve(path.join(ROOT, 'src/main/guest-mainworld.js'))];
+  const gm9 = require(path.join(ROOT, 'src/main/guest-mainworld.js'));
+
+  ok('XHR 钩子安装后 send 不抛错、请求照常发出（P0 回归）', () => {
+    const xhr = new XHRStub();
+    xhr.open('GET', '/api/music/lyric');
+    let threw = null;
+    try { xhr.send(); } catch (e) { threw = e; }
+    assert.strictEqual(threw, null, 'send 不应抛异常');
+    assert.strictEqual(xhr._sent, true, '原生 send 应被调用');
+  });
+
+  ok('fetch 歌词嗅探经 postMessage 桥上报', async () => {
+    const before = messages.length;
+    await global.window.fetch('https://x/lyric-api/1');
+    // fetch 钩子是异步 text() 流程，等待微任务
+    await new Promise((r) => setTimeout(r, 50));
+    const lyricMsgs = messages.slice(before).filter((m) => m && m.__fnmusicLyrics);
+    assert.ok(lyricMsgs.length >= 1, '应嗅探到歌词消息');
+    assert.ok(lyricMsgs[0].__fnmusicLyrics.lrc.includes('fetch lyric line'));
+  });
+
+  ok('scanForLyrics 支持字段变体（lyricContent/lrcText）', () => {
+    const found = gm9.scanForLyrics({ lyricContent: '[00:01.00]variant field lyric line here', lrcText: '[00:02.00]second' });
+    assert.ok(found && found.length >= 1);
+  });
+
+  ok('__fnmusicSetVolume 已暴露且为函数', () => {
+    assert.strictEqual(typeof global.window.__fnmusicSetVolume, 'function');
+  });
+  ok('__fnmusicSetSinkNow 已暴露且为函数', () => {
+    assert.strictEqual(typeof global.window.__fnmusicSetSinkNow, 'function');
+  });
+  ok('清理浏览器桩全局', () => {
+    // 队列执行完本组测试后再恢复全局（避免影响其他组）
+    if (savedGlobals.window === undefined) delete global.window; else global.window = savedGlobals.window;
   });
 }
 

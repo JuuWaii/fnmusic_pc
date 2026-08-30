@@ -59,7 +59,8 @@
 - **v0.1.8/v0.1.9** **三问题修复**：FN Connect 带个人路径地址不追加 /music → 进入 NAS 桌面（applyMusicPath 改为仅 musicPath 结尾不重复追加）；登录态诊断路径修正（Electron 33 Cookie 在 Network/）；设置窗口/音频面板 ready-to-show 超时兜底 + 欢迎页/设置页硬件加速 touched 标记（防保存任意设置切回硬件加速）；三轮审查处置（隐私路径段检测/边界测试）
 - **v0.1.10** **设备枚举 iframe 修复 + 登录态诊断**：listDevices 遍历全部 frame（门户音乐应用渲染在跨域 iframe，主 frame mediaDevices 不可用）；诊断新增 cookie 按域分组/session 标志/localStorage 按 frame；三轮审查处置（null 守卫/多 frame 测试/日志脱敏）
 - **v0.1.11** **自动登录**：登录态根因=门户 music-token 为 session cookie（重启即丢）→ 设置页保存账号密码（safeStorage/DPAPI 加密落盘，无明文）→ 登录页自动填写提交（iframe 全注入 + origin 过滤 + React/Vue 兼容 + SPA MutationObserver）；两轮审查处置（welcome 选择器/清空语义/origin 过滤/可解密判定/长度上限）
-- **v0.1.12**（当前）**自动登录真机联调**：CDP 实测发现 /music/login 有「使用 NAS 登录」与「登录」双按钮，旧正则误点 NAS → 优先 type=submit + 精确文本锚定排除 NAS/忘记；SPA 轮询 + MutationObserver 覆盖动态表单；真机端到端验证填写+提交成功
+- **v0.1.12** **自动登录真机联调**：CDP 实测发现 /music/login 有「使用 NAS 登录」与「登录」双按钮，旧正则误点 NAS → 优先 type=submit + 精确文本锚定排除 NAS/忘记；SPA 轮询 + MutationObserver 覆盖动态表单；真机端到端验证填写+提交成功
+- **v0.1.13**（当前）**欢迎页自动登录配置**：欢迎页新增账号密码输入区（虚线卡片样式），保存语义与设置页一致（账号变化才提交/密码非空才提交/清空账号清密码）；复用既有凭据加密链路
 
 ## 5. 关键经验教训（新会话必读，避免重复踩坑）
 
@@ -86,17 +87,17 @@
 - 真实地址只在 gitignore 的 `dev.config.json` 与 `新建 文本文档.txt`（用户任务笔记，勿动勿提交）；
 - 日志/诊断对 URL 脱敏（sanitizeUrl：剥 query/hash、token 打码）、userData 路径 %USERPROFILE% 化。
 
-## 6. 当前状态（v0.1.12，工作区干净）
+## 6. 当前状态（v0.1.13，工作区干净）
 
-- git：37 提交，HEAD = `298b8c5`（+版本号 0.1.12 待提交）；`git status` 干净
+- git：38 提交，HEAD = 欢迎页自动登录提交（+版本号 0.1.13 待提交）；`git status` 干净
 - 测试：`npm test` → scripts/test-headless.js **60/60 通过**
 - 隐私：`npm run check:privacy` → 42 文件 0 违规（含 FN Connect 个人路径段检测）
-- 产物：`dist\FNMusicPC Setup 0.1.12.exe`（安装版）、`dist\FNMusicPC 0.1.12.exe`（便携版）
+- 产物：`dist\FNMusicPC Setup 0.1.13.exe`（安装版）、`dist\FNMusicPC 0.1.13.exe`（便携版）
 - 依赖：electron ^33.4.11、electron-builder ^26.15.3、node_modules 已装（含手动下载的 electron 二进制）
 
 ## 7. 待办与验证清单（用户真机）
 
-1. **v0.1.12 验证（重点）**：设置页填账号密码保存 → 重启 → 音乐登录页自动填写并点「登录」（不再误点「使用 NAS 登录」）；
+1. **v0.1.13 验证（重点）**：欢迎页/设置页填账号密码保存 → 重启 → 音乐登录页自动填写并点「登录」；
 2. **登录态验证**：登录一次 → 托盘退出 → 重开免登录；看日志 Cookie 文件与诊断 `cookieCount/localStorage`；
 3. **音频面板**：工具栏 🔊 → 设备即选即生效 + 音量联动（已确认正常，回归验证）；
 4. **欢迎页测试**：移走 dev.config.json 后启动应显示欢迎页（地址预填来自 dev.config.json）——v0.1.7 已修复该路径；

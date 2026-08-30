@@ -219,3 +219,35 @@ master gain + 媒体元素双通道）、歌词捕获改进（全量 JSON 嗅探
 **真机验证建议**：v0.1.10 打开音频面板应能枚举设备（iframe 回退）；若仍失败，设置页
 诊断输出各 frame 的 mediaDevices/secureContext。登录态：诊断看 cookieDetail 的 session
 标志——session:true 即门户 session cookie 问题（重启必丢，客户端无法根治）。
+
+## 审查轮 11：自动登录功能（v0.1.11，审查 A 功能 / C 凭据安全重点）
+
+**背景**：用户诊断证实登录态根因——`music-token` 为 session cookie（`session:true` 无过期
+时间），重启即丢；`fnos-long-token` 为持久 cookie 但不足以维持音乐会话。用户要求记录
+账号密码、登录页自动填写。
+
+**功能**（ac56df1）：
+- settings.js：`loginUsername`（明文）/`loginPassword`（IPC 临时载体）/`loginPasswordEnc`
+  （safeStorage/DPAPI 加密落盘）——settings.json 无明文密码；getAll 只暴露
+  `loginPasswordSet` 布尔；`getLoginPassword()` 主进程内部解密不过 IPC；
+- window-manager.js：guest did-finish-load 后向全部 frame 注入自动填写脚本（检测密码框
+  才动作、React/Vue native setter + input/change、MutationObserver 覆盖 SPA、20s 自停、
+  窗口级守卫）；设置页「自动登录」区块（密码不回显明文、留空保持、清空账号清密码）。
+
+**审查发现与处置**（d795a5f）：
+- A P1-1：自动登录区块插入破坏 welcome 模式 `section:nth-of-type(3)` 选择器（偏移命中
+  音频设备区块）→ 改用 id 选择器（sectionAutoLogin + sectionAdvanced）；
+- A P1-2 / C P2-1：UI 清空账号时密码残留（无删除路径）→ 账号清空时同步提交空密码清除；
+- C P2-2：注入未校验 frame origin（跨域 iframe 含密码框会被填凭据）→
+  `security.isTrustedOrigin` 过滤（did-finish-load + frame-created 双路径）；
+- A P2-3：`loginPasswordSet` 只反映密文存在 → 改为可解密判定（safeStorage 不可用/
+  跨机器 DPAPI 密钥不匹配时视为未设置）；
+- A P2-4：后加载 iframe 登录表单不覆盖 → frame-created 时也注入；
+- A P3-7：凭据无长度上限 → 账号 128/密码 512 截断；
+- A P3-8：补 b64 降级 + 跨环境解密失败 + 长度上限测试；
+- 修复 encryptPassword/decryptPassword 延迟 require('electron')（测试桩拦截不到）。
+
+**结论**：C 通过（0 P0/P1）；A 两轮审查 P1/P2/P3 全部处置。测试 59/59，check-privacy 0 违规。
+
+**真机验证建议**：设置页填写账号密码保存 → 重启客户端 → 登录页自动填写提交；
+凭据 DPAPI 加密，仅本机用户可解密。

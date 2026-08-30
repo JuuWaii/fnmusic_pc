@@ -12,6 +12,8 @@ const $ = (id) => document.getElementById(id);
 // 保持原设置不变——避免「默认勾选 → 意外从软件渲染切回硬件加速 →
 // 渲染异常机器黑屏/界面错乱」。
 let hardwareTouched = false;
+// 当前已保存的登录账号（供保存时比较是否变化；密码不回显明文）
+let currentLoginUsername = '';
 // 监听器在 init 之前挂载（审查轮 9 P3）：避免 IPC 返回前用户点击开关被忽略
 $('hardwareAcceleration').addEventListener('change', () => { hardwareTouched = true; });
 
@@ -22,6 +24,10 @@ $('hardwareAcceleration').addEventListener('change', () => { hardwareTouched = t
   $('musicPath').value = s.musicPath || '';
   $('accessMode').value = s.accessMode || 'auto';
   $('hardwareAcceleration').checked = s.hardwareAcceleration !== false;
+  // 自动登录凭据（v0.1.13）：账号回显；密码不回显明文（仅显示已设置状态）
+  $('loginUsername').value = s.loginUsername || '';
+  currentLoginUsername = s.loginUsername || '';
+  $('loginPassword').placeholder = s.loginPasswordSet ? '已保存（留空保持不变）' : '未设置';
 })();
 
 /** 展示测试结果 */
@@ -55,6 +61,15 @@ $('btnStart').addEventListener('click', async () => {
   };
   // 仅当用户显式改动过硬件加速开关才提交该字段（保持原设置，避免误切换）
   if (hardwareTouched) patch.hardwareAcceleration = $('hardwareAcceleration').checked;
+  // 自动登录凭据（v0.1.13）：账号变化才提交；密码仅当用户输入了新值才提交
+  // （留空 = 保持原密码不变）；账号被清空时同步清除密码
+  const newUsername = $('loginUsername').value.trim();
+  if (newUsername !== (currentLoginUsername || '')) {
+    patch.loginUsername = newUsername;
+    if (!newUsername) patch.loginPassword = ''; // 清空账号 → 一并清除已存密码
+  }
+  const newPass = $('loginPassword').value;
+  if (newPass) patch.loginPassword = newPass;
   const result = await api.saveSettings(patch);
   if (result && result.ok === false) {
     showResult(false, '保存失败：' + (result.error || '未知错误'));

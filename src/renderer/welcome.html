@@ -46,6 +46,18 @@
         <option value="remote">仅远程地址</option>
       </select>
 
+      <!-- 自动登录（v0.1.13：欢迎页也可配置账号密码，登录页自动填写） -->
+      <div class="auto-login-box">
+        <label for="loginUsername">飞牛账号（自动登录，可选）</label>
+        <input id="loginUsername" type="text" spellcheck="false" autocomplete="off" />
+        <label for="loginPassword">密码（可选）</label>
+        <input id="loginPassword" type="password" autocomplete="off" />
+        <p class="auto-login-hint">
+          登录页出现时自动填写并提交。密码经系统安全存储（DPAPI）加密保存在本机，
+          不写日志、不上传。可留空稍后在设置中配置。
+        </p>
+      </div>
+
       <div class="actions">
         <button id="btnTest" class="ghost">测试连接</button>
         <button id="btnStart" class="primary">保存并开始使用</button>

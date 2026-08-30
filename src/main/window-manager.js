@@ -38,7 +38,7 @@ let mainWorldScript = null;
 let mainWindow = null;
 let guestView = null;           // 懒创建：首次进入 app 模式才创建
 let guestAttached = false;      // guestView 是否已挂到 contentView
-let shellMode = 'welcome';      // 'welcome' | 'app'
+let shellMode = null;           // 'welcome' | 'app'（初始 null：首次 switchShellMode 不短路，必须加载页面）
 let lastIntent = null;          // {url, mode, fallback, triedRemote}
 let watchdogTimer = null;       // 加载看门狗
 let reloadTimer = null;         // 渲染进程崩溃后的延迟重载
@@ -344,8 +344,10 @@ function layout() {
 
 /** 切换到指定壳模式 */
 function switchShellMode(mode) {
+  // 注：shellMode 初始为 null，首次进入 welcome 模式不会短路（否则欢迎页永不加载 → 黑屏回归）
   if (shellMode === mode) return;
   shellMode = mode;
+  logger.info('壳模式切换:', mode);
   if (mode === 'app') {
     mainWindow.webContents.loadFile(path.join(__dirname, '..', 'renderer', 'toolbar.html'));
     ensureGuestView();

@@ -53,6 +53,7 @@ const evilEvent = {
 function makeWebContentsStub() {
   const wc = {
     _sent: [],
+    _loadCalls: [],
     send(ch, data) { this._sent.push({ ch, data }); },
     on() {},
     once() {},
@@ -63,7 +64,8 @@ function makeWebContentsStub() {
       }
       return 2;
     },
-    loadURL: async () => {}, loadFile: async () => {},
+    loadURL: async (u) => { wc._loadCalls.push('url:' + u); },
+    loadFile: async (f) => { wc._loadCalls.push('file:' + f); },
     getURL: () => 'http://127.0.0.1:5666/', getTitle: () => '飞牛 fnOS',
     canGoBack: () => false, canGoForward: () => false, isLoading: () => false,
     isDestroyed: () => false, reload() {}, goBack() {}, goForward() {}, stop() {},
@@ -373,11 +375,18 @@ console.log('\n[5] window-manager');
   const wm = loadWithStub(path.join(ROOT, 'src/main/window-manager.js'), stub);
   wm.createMainWindow();
   const viewsAfterWelcome = stub._views.length; // 未配置时不应创建 guest 视图
+  const shellWc = stub._wins[0] && stub._wins[0].webContents;
   settingsMod.update({ serverUrl: 'http://127.0.0.1:5666', accessMode: 'auto' });
   wm.loadHome();
   const viewsAfterLoadHome = stub._views.length; // 配置后懒创建 1 个
   ok('未配置 → welcome 模式（不创建 guest 视图）', () => {
     assert.strictEqual(viewsAfterWelcome, 0);
+  });
+  ok('未配置 → welcome 模式必须加载欢迎页（黑屏回归：壳页面从不加载）', () => {
+    // 回归测试：shellMode 初始值曾为 'welcome'，switchShellMode 短路导致 welcome.html 永不加载
+    const fileCalls = (shellWc && shellWc._loadCalls || []).filter((c) => c.startsWith('file:'));
+    assert.ok(fileCalls.length > 0, '应有 loadFile 调用，实际: ' + JSON.stringify(shellWc && shellWc._loadCalls));
+    assert.ok(fileCalls.some((c) => c.includes('welcome.html')), '应加载 welcome.html');
   });
   ok('loadHome 懒创建 guest 视图', () => {
     assert.strictEqual(viewsAfterLoadHome, 1);

@@ -42,8 +42,12 @@ function validateUrl(raw) {
  *
  * 背景：飞牛音乐网页的实际入口是「门户根地址 + /music」
  * （例如 http://192.168.x.x:5666/music），用户通常只填写门户根地址
- * （打开后是飞牛 NAS 桌面）。若配置了 musicPath 且地址路径为空，自动追加。
- * - 地址本身已包含路径（如已填 /music）时不追加；
+ * （打开后是飞牛 NAS 桌面）。若配置了 musicPath 则自动追加：
+ * - 路径为空（根地址）→ 追加；
+ * - 路径已以 musicPath 结尾（如已填 /music）→ 不重复追加；
+ * - 路径非空且不以 musicPath 结尾（如 FN Connect 个人地址
+ *   https://fnos.net/用户名）→ 同样追加（修复 v0.1.7 后问题：
+ *   远程地址带个人路径时进入 NAS 桌面而非音乐）；
  * - musicPath 置空则完全不追加。
  *
  * @param {string|null} rawUrl 待处理地址
@@ -57,11 +61,12 @@ function applyMusicPath(rawUrl, settings) {
   if (!path) return url;
   try {
     const u = new URL(url);
-    // 路径为空（'/' 或 ''）才追加
-    const base = u.pathname.replace(/\/+$/, '');
-    if (base) return url;
     const p = path.startsWith('/') ? path : '/' + path;
-    u.pathname = p.replace(/\/+$/, '') || '/';
+    const normPath = p.replace(/\/+$/, '') || '/';
+    const base = u.pathname.replace(/\/+$/, '');
+    // 已以 musicPath 结尾（用户已填完整入口）→ 不重复追加
+    if (base && base.endsWith(normPath)) return url;
+    u.pathname = (base ? base + normPath : normPath).replace(/\/+$/, '') || '/';
     return u.toString().replace(/\/$/, '');
   } catch {
     return url;

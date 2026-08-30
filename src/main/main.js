@@ -115,14 +115,16 @@ function bootstrap() {
   settings.load();
   logger.info('FN Music PC 启动 v' + app.getVersion(), 'platform=' + process.platform);
   // 登录态诊断：userData 路径、persist 分区 Cookie 文件、settings 状态
-  // （登录态实际存储在 Partitions/fnmusic-guest/Cookies，审查轮 M3 修正路径；
-  //   路径做脱敏，避免日志分享时泄露用户名——审查轮 L1）
+  // （Electron 33+/Chromium 新版 Cookie 数据库位于 Partitions/fnmusic-guest/Network/Cookies，
+  //   旧版在分区根目录——两处都检查，避免误报「不存在」；路径做脱敏，避免日志分享时泄露用户名）
   try {
     const home = app.getPath('home');
     const sanitized = (p) => (home ? String(p).replace(home, '%USERPROFILE%') : String(p));
-    const cookiePath = path.join(app.getPath('userData'), 'Partitions', 'fnmusic-guest', 'Cookies');
+    const cookiePathNew = path.join(app.getPath('userData'), 'Partitions', 'fnmusic-guest', 'Network', 'Cookies');
+    const cookiePathOld = path.join(app.getPath('userData'), 'Partitions', 'fnmusic-guest', 'Cookies');
+    const cookieFile = fs.existsSync(cookiePathNew) ? cookiePathNew : (fs.existsSync(cookiePathOld) ? cookiePathOld : null);
     logger.info('userData 路径:', sanitized(app.getPath('userData')));
-    logger.info('登录态 Cookie 文件:', fs.existsSync(cookiePath) ? (fs.statSync(cookiePath).size + ' bytes') : '不存在');
+    logger.info('登录态 Cookie 文件:', cookieFile ? (fs.statSync(cookieFile).size + ' bytes') : '不存在');
     logger.info('settings.json:', fs.existsSync(path.join(app.getPath('userData'), 'settings.json')) ? '存在' : '不存在');
   } catch (e) {
     logger.warn('登录态诊断失败:', e.message);

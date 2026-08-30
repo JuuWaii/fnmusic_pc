@@ -59,7 +59,18 @@ function openSettingsWindow(welcome) {
   settingsWindow.loadFile(path.join(__dirname, '..', 'renderer', 'settings.html'), {
     query: { welcome: welcome ? '1' : '0' },
   });
-  settingsWindow.once('ready-to-show', () => settingsWindow.show());
+  // 渲染异常机器上 ready-to-show 可能不触发 → 5s 超时兜底强制显示
+  // （与主窗口黑屏兜底一致，v0.1.8 修复：此前设置窗口可能永远不显示/显示异常）
+  const settingsReadyTimer = setTimeout(() => {
+    if (settingsWindow && !settingsWindow.isDestroyed() && !settingsWindow.isVisible()) {
+      logger.warn('设置窗口 ready-to-show 超时（5s），强制显示');
+      settingsWindow.show();
+    }
+  }, 5000);
+  settingsWindow.once('ready-to-show', () => {
+    clearTimeout(settingsReadyTimer);
+    settingsWindow.show();
+  });
   settingsWindow.on('closed', () => { settingsWindow = null; });
 }
 
@@ -95,7 +106,17 @@ function openAudioPanelWindow() {
     return { action: 'deny' };
   });
   audioPanelWindow.loadFile(path.join(__dirname, '..', 'renderer', 'audio-panel.html'));
-  audioPanelWindow.once('ready-to-show', () => audioPanelWindow.show());
+  // 渲染异常机器上 ready-to-show 可能不触发 → 5s 超时兜底强制显示（v0.1.8 修复）
+  const panelReadyTimer = setTimeout(() => {
+    if (audioPanelWindow && !audioPanelWindow.isDestroyed() && !audioPanelWindow.isVisible()) {
+      logger.warn('音频面板 ready-to-show 超时（5s），强制显示');
+      audioPanelWindow.show();
+    }
+  }, 5000);
+  audioPanelWindow.once('ready-to-show', () => {
+    clearTimeout(panelReadyTimer);
+    audioPanelWindow.show();
+  });
   audioPanelWindow.on('closed', () => { audioPanelWindow = null; });
 }
 

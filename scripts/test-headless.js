@@ -217,6 +217,23 @@ console.log('\n[1] server-url');
     assert.strictEqual(su.applyMusicPath('http://127.0.0.1:5666/music', { musicPath: '/music' }), 'http://127.0.0.1:5666/music');
     assert.strictEqual(su.applyMusicPath('not-a-url', { musicPath: '/music' }), null);
   });
+  ok('FN Connect 个人地址（带路径）也追加 /music（v0.1.8 修复：不再进入 NAS 桌面）', () => {
+    // 用户 remoteUrl 形如 https://fnos.net/<用户名>，路径非空但并非音乐入口 →
+    // 必须追加 /music，否则进入 NAS 门户桌面
+    const r = su.resolve({
+      serverUrl: '', remoteUrl: 'https://x.' + 'fnos.net/USER_PATH',
+      accessMode: 'remote', musicPath: '/music',
+    });
+    assert.strictEqual(r.url, 'https://x.' + 'fnos.net/USER_PATH/music');
+  });
+  ok('远程地址已含 /music 结尾则不重复追加', () => {
+    const r = su.applyMusicPath('https://x.' + 'fnos.net/USER_PATH/music', { musicPath: '/music' });
+    assert.strictEqual(r, 'https://x.' + 'fnos.net/USER_PATH/music');
+  });
+  ok('musicPath 留空时带路径地址保持原样（不追加）', () => {
+    const r = su.applyMusicPath('https://x.' + 'fnos.net/USER_PATH', { musicPath: '' });
+    assert.strictEqual(r, 'https://x.' + 'fnos.net/USER_PATH');
+  });
   ok('isConfigured 判定', () => {
     assert.strictEqual(su.isConfigured({ serverUrl: '', remoteUrl: '' }), false);
     assert.strictEqual(su.isConfigured({ serverUrl: 'http://127.0.0.1:5666', remoteUrl: '' }), true);

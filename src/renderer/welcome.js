@@ -7,6 +7,12 @@
 const api = window.fnmusic;
 const $ = (id) => document.getElementById(id);
 
+// 硬件加速「用户是否显式改动过」标记（v0.1.8 修复）：
+// 欢迎页保存时若用户未触碰该开关，则不提交 hardwareAcceleration 字段，
+// 保持原设置不变——避免「默认勾选 → 意外从软件渲染切回硬件加速 →
+// 渲染异常机器黑屏/界面错乱」。
+let hardwareTouched = false;
+
 (async function init() {
   const s = await api.getSettings();
   $('serverUrl').value = s.serverUrl || '';
@@ -14,6 +20,7 @@ const $ = (id) => document.getElementById(id);
   $('musicPath').value = s.musicPath || '';
   $('accessMode').value = s.accessMode || 'auto';
   $('hardwareAcceleration').checked = s.hardwareAcceleration !== false;
+  $('hardwareAcceleration').addEventListener('change', () => { hardwareTouched = true; });
 })();
 
 /** 展示测试结果 */
@@ -39,13 +46,15 @@ $('btnStart').addEventListener('click', async () => {
     showResult(false, '请至少填写一个服务器地址');
     return;
   }
-  const result = await api.saveSettings({
+  const patch = {
     serverUrl,
     remoteUrl,
     musicPath: $('musicPath').value.trim(),
     accessMode: $('accessMode').value,
-    hardwareAcceleration: $('hardwareAcceleration').checked,
-  });
+  };
+  // 仅当用户显式改动过硬件加速开关才提交该字段（保持原设置，避免误切换）
+  if (hardwareTouched) patch.hardwareAcceleration = $('hardwareAcceleration').checked;
+  const result = await api.saveSettings(patch);
   if (result && result.ok === false) {
     showResult(false, '保存失败：' + (result.error || '未知错误'));
     return;

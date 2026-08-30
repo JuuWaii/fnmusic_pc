@@ -35,6 +35,7 @@ function showTest(ok, text) {
   $('lyricsOpacity').value = current.lyricsOpacity ?? 0.9;
   $('opacityValue').textContent = current.lyricsOpacity ?? 0.9;
   $('ignoreCertErrors').checked = Boolean(current.ignoreCertErrors);
+  $('minimizeToTray').checked = Boolean(current.minimizeToTray);
 
   // 欢迎模式：简化页面
   if (isWelcome) {
@@ -114,6 +115,7 @@ $('btnSave').addEventListener('click', async () => {
     showDesktopLyrics: $('lyricsEnabled').checked,
     lyricsOpacity: Number($('lyricsOpacity').value),
     ignoreCertErrors: $('ignoreCertErrors').checked,
+    minimizeToTray: $('minimizeToTray').checked,
   };
   // 音频设备：仅当选择项有变化时才发送（避免空列表时误清空）
   const sel = $('deviceSelect').value;
@@ -137,7 +139,7 @@ $('btnDefaults').addEventListener('click', async () => {
   if (!confirm('确定恢复默认设置吗？服务器地址将被清空。')) return;
   await api.saveSettings({
     serverUrl: '', remoteUrl: '', musicPath: '/music', accessMode: 'auto',
-    audioDeviceId: '', ignoreCertErrors: false,
+    audioDeviceId: '', ignoreCertErrors: false, minimizeToTray: true,
     showDesktopLyrics: false, lyricsOpacity: 0.9,
   });
   location.reload();

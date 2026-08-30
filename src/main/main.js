@@ -22,6 +22,7 @@ const lyrics = require('./lyrics');
 const audioDevices = require('./audio-devices');
 const ipc = require('./ipc');
 const menu = require('./menu');
+const tray = require('./tray');
 
 // Windows 通知/任务栏分组标识（需在 ready 前设置）
 app.setAppUserModelId('com.fnmusic.pc');
@@ -43,14 +44,13 @@ try {
 // 单实例：重复启动时聚焦已有窗口
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
+  // 已有实例在运行：通知旧实例显示窗口后退出本进程。
+  // 若用户感觉"打不开"，请检查任务管理器是否残留 FNMusicPC.exe / electron.exe 进程。
   app.quit();
 } else {
   app.on('second-instance', () => {
-    const w = windowManager.getMainWindow();
-    if (w) {
-      if (w.isMinimized()) w.restore();
-      w.focus();
-    }
+    // 已有实例运行：显示并聚焦主窗口（解决"双击没反应"——旧实例还在后台）
+    tray.showMainWindow();
   });
 
   app.whenReady().then(bootstrap);
@@ -68,13 +68,18 @@ function bootstrap() {
 
   menu.setupMenu();
   windowManager.createMainWindow();
+  // 系统托盘（后台运行）；窗口隐藏时仍可从此恢复
+  tray.createTray(() => windowManager.getMainWindow());
   ipc.register({ guestSession });
 
   // 全局兜底日志（不崩溃退出，仅记录）
   process.on('uncaughtException', (e) => logger.error('未捕获异常:', e && e.stack ? e.stack : e));
   process.on('unhandledRejection', (e) => logger.error('未处理 Promise 拒绝:', e && e.message ? e.message : e));
 
-  app.on('before-quit', () => lyrics.dispose());
+  app.on('before-quit', () => {
+    global.__fnmusicQuit = true; // 允许主窗口 close 真正生效
+    lyrics.dispose();
+  });
 
   // 自动化冒烟测试：npm run smoke（仅开发/CI 使用；打包产物不启用）
   if (!app.isPackaged && process.argv.includes('--smoke-test')) runSmokeTest();

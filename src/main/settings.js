@@ -23,6 +23,7 @@ const DEFAULTS = Object.freeze({
   showDesktopLyrics: false, // 桌面歌词开关（可选功能）
   lyricsOpacity: 0.9,       // 桌面歌词窗口不透明度 0.3~1
   musicPath: '/music',      // 音乐入口路径：地址路径为空时自动追加（置空则不加）
+  minimizeToTray: true,    // 关闭主窗口时最小化到系统托盘（后台继续播放）
 });
 
 /**

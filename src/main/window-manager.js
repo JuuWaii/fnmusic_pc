@@ -89,13 +89,25 @@ function createMainWindow() {
   mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
 
   mainWindow.on('resize', () => layout());
+
+  // 关闭按钮（X）行为：
+  // - 「关闭时最小化到托盘」开启：隐藏到托盘，网页继续后台播放；
+  // - 关闭该选项或托盘「退出」：真正退出应用（含歌词窗，避免僵尸进程）。
+  mainWindow.on('close', (e) => {
+    if (!global.__fnmusicQuit && settings.getAll().minimizeToTray) {
+      e.preventDefault();
+      mainWindow.hide();
+      return;
+    }
+    global.__fnmusicQuit = true;
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
     guestView = null;
     guestAttached = false;
     clearWatchdog();
     clearTimeout(reloadTimer);
-    // 音乐客户端：主窗口关闭即退出整个应用（含歌词窗，避免"僵尸进程"）
     app.quit();
   });
   mainWindow.once('ready-to-show', () => mainWindow.show());

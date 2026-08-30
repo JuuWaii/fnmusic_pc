@@ -116,7 +116,18 @@ function electronStub() {
         return ses;
       },
     },
-    Menu: { setApplicationMenu() {} },
+    Menu: {
+      setApplicationMenu() {},
+      buildFromTemplate: () => ({ popup() {} }),
+    },
+    Tray: class {
+      constructor(icon) { this.icon = icon; }
+      setToolTip() {} setContextMenu() {} on() {}
+    },
+    nativeImage: {
+      createFromPath: () => ({ isEmpty: () => true, resize: () => ({}) }),
+      createFromDataURL: () => ({ isEmpty: () => false, resize: () => ({}) }),
+    },
     screen: { getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) },
     shell: { openExternal: async () => {} },
     _ipcHandlers: ipcHandlers,
@@ -218,6 +229,8 @@ console.log('\n[2] settings');
     const s = st.getAll();
     assert.strictEqual(s.serverUrl, '');
     assert.strictEqual(s.accessMode, 'auto');
+    assert.strictEqual(s.musicPath, '/music');
+    assert.strictEqual(s.minimizeToTray, true);
   });
   ok('update 白名单与类型收窄', () => {
     st.update({ serverUrl: 'http://127.0.0.1:5666', accessMode: 'local', evil: 123, audioDeviceId: 999 });
@@ -438,7 +451,23 @@ console.log('\n[6] security（来源校验）');
   });
 }
 
-console.log('\n[7] guest-mainworld 歌词嗅探');
+console.log('\n[7] tray 托盘模块');
+{
+  const stub = electronStub();
+  const tray = loadWithStub(path.join(ROOT, 'src/main/tray.js'), stub);
+  ok('createTray 创建托盘（空图标兜底）', () => {
+    const tr = tray.createTray(() => null);
+    assert.ok(tr);
+  });
+  ok('showMainWindow 无窗口时不抛错', () => {
+    tray.showMainWindow();
+  });
+  ok('toggleMainWindow 无窗口时不抛错', () => {
+    tray.toggleMainWindow();
+  });
+}
+
+console.log('\n[8] guest-mainworld 歌词嗅探');
 {
   // guest-mainworld 是纯函数模块（浏览器入口被 window 守卫跳过）
   const gm = require(path.join(ROOT, 'src/main/guest-mainworld.js'));

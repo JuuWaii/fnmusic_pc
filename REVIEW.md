@@ -295,3 +295,33 @@ master gain + 媒体元素双通道）、歌词捕获改进（全量 JSON 嗅探
 欢迎页 btnStart 强制要求至少一个服务器地址 → 凭据无法先于地址落盘。
 
 **真机验证建议**：v0.1.13 欢迎页填账号密码保存 → 重启 → 音乐登录页自动填写并点「登录」。
+
+## 审查轮 14：FN Connect 场景自动登录失效（v0.1.14，审查 A/C）
+
+**背景**：用户反馈本地（内网）自动登录成功，但通过 FN Connect 远程连接时失效——
+先进入加载页再进音乐登录页。CDP 真机验证：`https://<FN Connect 域名>/music` 会 302
+到内网 `http://<NAS>/music/login`（**跨域跳转，origin 变化**）。
+
+**根因**：原注入逻辑对所有 frame 做 `security.isTrustedOrigin` 过滤——仅配置
+remoteUrl（无 serverUrl）时内网 origin 不在信任列表 → 主 frame 注入被跳过 →
+自动登录失效。
+
+**修复**（99aa220 + 后续）：
+- **主 frame 始终注入**（它是用户配置地址的导航结果，FN Connect 302 到内网属
+  正常导航链）；子 frame 保留 origin 过滤（防跨域 iframe 被填凭据）；
+- **页面侧 origin 校验**（审查 C P2 收紧）：autoLoginSnippet 内校验
+  `location.origin ∈ 已配置服务器 origins ∪ FN Connect 官方代理域
+  （fnos.net/5ddd.com/trzznas.com）`——防止用户从信任页导航到外站（钓鱼/无关
+  登录表单）时凭据被误填；server-url.js 新增 trustedOrigins()；
+- 文案：欢迎页/设置页「飞牛账号」→「飞牛音乐账号」+ 备注非 NAS 系统账号 +
+  安全提示（勿在应用内访问不信任网页）。
+
+**隐私处置**（审查 C P0）：调试期临时脚本与 commit message 曾含真实内网 IP 与
+FN Connect 个人地址 → filter-branch 重写历史（master 全历史 0 敏感）+ REVIEW.md
+真实用户名残留改中性表述 + check-privacy 复检通过。
+
+**端到端验证**（CDP 真实页面）：FN Connect 302 到内网 /music/login 后自动填写
+账号密码 + 点击「登录」→ 表单提交成功。
+
+**真机验证建议**：v0.1.14 仅配置 remoteUrl 时，FN Connect 登录页应自动填写并提交；
+欢迎页/设置页文案已标注「飞牛音乐账号（非 NAS 系统账号）」。

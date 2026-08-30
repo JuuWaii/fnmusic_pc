@@ -92,7 +92,7 @@
 
 ## 6. 当前状态（v0.1.17 已发布，工作区干净）
 
-- git：66 提交（HEAD 为 HANDOVER 定稿提交），作者全部匿名 fnmusic-pc@users.noreply.github.com；`git status` 干净
+- git：66 个功能提交 + 文档定稿提交（HEAD），作者全部匿名 fnmusic-pc@users.noreply.github.com；`git status` 干净
 - 测试：`npm test` → scripts/test-headless.js **60/60 通过**
 - 隐私：`npm run check:privacy` → 0 违规；**全 git 历史（含对象库）敏感 blob 已清零**（三轮发布前审查）
 - 产物：`dist\FNMusicPC Setup 0.1.17.exe`（安装版）、`dist\FNMusicPC 0.1.17.exe`（便携版），已上传 GitHub Release

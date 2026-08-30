@@ -25,6 +25,13 @@ const DEFAULTS = Object.freeze({
   volume: 1,                // 客户端音量（0~1，作用于网页播放器输出）
   hardwareAcceleration: true,  // 硬件加速（需重启生效；关闭可解决部分显卡/远程桌面黑屏）
   hardwareAccelUserSet: false, // 用户是否显式设置过硬件加速（自动降级不再干预）
+  // 登录凭据（自动登录用，v0.1.11）：
+  // - loginUsername：明文用户名（非高敏感）；
+  // - loginPasswordEnc：密码经 safeStorage（Windows DPAPI）加密后的密文——
+  //   settings.json 中**不保存明文密码**；
+  // - loginPassword 仅为 IPC 传入的临时载体，不在 DEFAULTS 中、不落盘。
+  loginUsername: '',
+  loginPasswordEnc: '',
 });
 
 /**
@@ -81,7 +88,7 @@ function readConfiguredOriginsPreReady() {
   return readPreReadyConfig().origins;
 }
 
-/** 可持久化的键集合（防止写入未知字段） */
+/** 可持久化的键集合（防止写入未知字段；loginPasswordEnc 为加密密文，可落盘） */
 const KEYS = Object.keys(DEFAULTS);
 
 /** 类型收窄：只接受合法的字符串/布尔值 */
@@ -91,6 +98,36 @@ function sanitize(key, value) {
   if (typeof def === 'string') return typeof value === 'string' ? value : def;
   if (typeof def === 'number') return typeof value === 'number' && Number.isFinite(value) ? value : def;
   return def;
+}
+
+/** 密码加密（safeStorage/DPAPI；不可用时降级 base64 混淆——仍非明文落盘） */
+function encryptPassword(plain) {
+  if (!plain) return '';
+  try {
+    const { safeStorage } = require('electron');
+    if (safeStorage.isEncryptionAvailable()) {
+      return 'enc:' + safeStorage.encryptString(String(plain)).toString('base64');
+    }
+  } catch { /* 降级 */ }
+  return 'b64:' + Buffer.from(String(plain), 'utf8').toString('base64');
+}
+
+/** 密码解密（与 encryptPassword 对应） */
+function decryptPassword(stored) {
+  if (!stored) return '';
+  try {
+    if (stored.startsWith('enc:')) {
+      const { safeStorage } = require('electron');
+      if (safeStorage.isEncryptionAvailable()) {
+        return safeStorage.decryptString(Buffer.from(stored.slice(4), 'base64'));
+      }
+      return ''; // 加密不可用则无法解密（跨机器/环境），视为未设置
+    }
+    if (stored.startsWith('b64:')) {
+      return Buffer.from(stored.slice(4), 'base64').toString('utf8');
+    }
+  } catch { /* 解密失败视为未设置 */ }
+  return '';
 }
 
 function settingsFile() {
@@ -142,10 +179,17 @@ function load() {
   return state;
 }
 
-/** 保存设置（部分更新；仅接受白名单键） */
+/** 保存设置（部分更新；仅接受白名单键；loginPassword 为明文临时载体——
+ * 落盘前加密为 loginPasswordEnc，settings.json 不保存明文密码） */
 function update(patch) {
-  for (const k of Object.keys(patch || {})) {
-    if (KEYS.includes(k)) state[k] = sanitize(k, patch[k]);
+  const p = patch || {};
+  // 登录密码特殊处理：明文 → 加密后存入 loginPasswordEnc
+  if ('loginPassword' in p) {
+    const plain = typeof p.loginPassword === 'string' ? p.loginPassword : '';
+    state.loginPasswordEnc = encryptPassword(plain);
+  }
+  for (const k of Object.keys(p)) {
+    if (KEYS.includes(k) && k !== 'loginPasswordEnc') state[k] = sanitize(k, p[k]);
   }
   try {
     fs.writeFileSync(settingsFile(), JSON.stringify(state, null, 2), 'utf8');
@@ -155,9 +199,17 @@ function update(patch) {
   return getAll();
 }
 
-/** 返回当前设置的浅拷贝（对外只读） */
+/** 返回当前设置的浅拷贝（对外只读；密码密文不暴露给渲染层） */
 function getAll() {
-  return { ...state };
+  const out = { ...state };
+  delete out.loginPasswordEnc; // 密文仅主进程内部使用
+  out.loginPasswordSet = Boolean(state.loginPasswordEnc); // 布尔标志供 UI 展示
+  return out;
 }
 
-module.exports = { load, update, getAll, readConfiguredOriginsPreReady, readPreReadyConfig, DEFAULTS };
+/** 主进程内部：获取明文密码（自动登录注入用，不经过 IPC 渲染层） */
+function getLoginPassword() {
+  return decryptPassword(state.loginPasswordEnc);
+}
+
+module.exports = { load, update, getAll, getLoginPassword, readConfiguredOriginsPreReady, readPreReadyConfig, DEFAULTS };

@@ -46,6 +46,19 @@
       </div>
     </section>
 
+    <!-- 自动登录（v0.1.11：门户 session cookie 重启丢失时免手动输入） -->
+    <section>
+      <h2>自动登录</h2>
+      <label for="loginUsername">飞牛账号</label>
+      <input id="loginUsername" type="text" spellcheck="false" autocomplete="off" />
+      <label for="loginPassword">密码（可选）</label>
+      <input id="loginPassword" type="password" autocomplete="off" />
+      <p class="hint">
+        登录页出现时客户端自动填写并提交。密码经系统安全存储（DPAPI）加密保存在本机，
+        不写入日志、不上传。仅当网页要求登录时使用；若不确定可留空。
+      </p>
+    </section>
+
     <!-- 音频输出设备（需求 4） -->
     <section>
       <h2>音频输出设备</h2>

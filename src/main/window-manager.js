@@ -213,6 +213,12 @@ function createGuestView() {
     }
   });
 
+  // 自动登录（v0.1.11）：已配置登录凭据时，页面加载后向全部 frame 注入
+  // 自动填写脚本——检测到登录表单即填入账号密码并提交。
+  // 注：session cookie（music-token 无过期时间）在重启后丢失，门户重新
+  // 要求登录；自动填写是本机用户授权的便捷方案（凭据 safeStorage 加密存储）。
+  wc.on('did-finish-load', () => injectAutoLoginIntoFrames());
+
   /** 向主 frame 及其全部后代 frame 注入主世界脚本（framesInSubtree 覆盖嵌套 iframe） */
   function injectMainWorldIntoFrames() {
     const script = getMainWorldScript();
@@ -229,6 +235,83 @@ function createGuestView() {
       logger.warn('枚举 frame 失败:', e.message);
     }
     for (const frame of frames) injectIntoFrame(frame);
+  }
+
+  /**
+   * 自动登录填写脚本（注入到页面主世界执行）。
+   * 行为：查找登录表单（用户名/密码输入框）→ 填入已保存凭据 → 触发 input/change
+   * 事件（兼容 React/Vue）→ 点击登录按钮；MutationObserver 覆盖 SPA 动态表单。
+   * 仅在页面出现密码输入框时动作；无凭据/无表单则静默退出。
+   */
+  function autoLoginSnippet(username, password) {
+    const creds = JSON.stringify({ username: String(username || ''), password: String(password || '') });
+    return `(() => {
+      if (window.__fnmusicAutoLogin) return;
+      window.__fnmusicAutoLogin = true;
+      let creds = null;
+      try { creds = ${creds}; } catch (e) { return; }
+      if (!creds || !creds.username || !creds.password) return;
+      const setVal = (el, v) => {
+        const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+        setter.call(el, v);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      let tried = false;
+      const tryFill = () => {
+        if (tried) return false;
+        const userSel = ['input[type="text"]', 'input[type="email"]', 'input:not([type])', 'input[name*="user" i]', 'input[name*="account" i]', 'input[name*="name" i]', 'input[id*="user" i]', 'input[id*="account" i]'];
+        const passEls = Array.from(document.querySelectorAll('input[type="password"]'));
+        if (!passEls.length) return false;
+        let userEl = null;
+        for (const sel of userSel) {
+          const els = Array.from(document.querySelectorAll(sel));
+          const hit = els.find((el) => el.offsetParent !== null && !el.value);
+          if (hit) { userEl = hit; break; }
+        }
+        if (!userEl) userEl = Array.from(document.querySelectorAll('input')).find((el) => el.offsetParent !== null && !el.value && /user|account|name/i.test((el.name || '') + (el.id || '')));
+        const passEl = passEls.find((el) => el.offsetParent !== null && !el.value);
+        if (!userEl || !passEl) return false;
+        tried = true;
+        setVal(userEl, creds.username);
+        setVal(passEl, creds.password);
+        // 点击登录按钮（常见文案）
+        const btn = Array.from(document.querySelectorAll('button')).find((b) => {
+          const t = (b.textContent || '').trim();
+          return /登录|登 录|登陆|sign\s*in|log\s*in|submit/i.test(t) && b.offsetParent !== null;
+        }) || Array.from(document.querySelectorAll('input[type="submit"]')).find((b) => b.offsetParent !== null);
+        if (btn) setTimeout(() => { try { btn.click(); } catch (e) {} }, 300);
+        return true;
+      };
+      // 立即尝试 + SPA 动态表单兜底
+      if (!tryFill()) {
+        const mo = new MutationObserver(() => { if (tryFill()) mo.disconnect(); });
+        mo.observe(document.documentElement, { childList: true, subtree: true });
+        setTimeout(() => mo.disconnect(), 20000);
+      }
+    })()`;
+  }
+
+  /** 向全部 frame 注入自动登录脚本（凭据来自设置，主进程直取明文） */
+  function injectAutoLoginIntoFrames() {
+    const s = settings.getAll();
+    if (!s.loginUsername || !s.loginPasswordSet) return;
+    const script = autoLoginSnippet(s.loginUsername, settings.getLoginPassword());
+    const frames = [];
+    try {
+      if (wc.mainFrame) {
+        frames.push(wc.mainFrame);
+        for (const f of wc.mainFrame.framesInSubtree || []) {
+          if (f !== wc.mainFrame) frames.push(f);
+        }
+      }
+    } catch { /* 忽略 */ }
+    for (const frame of frames) {
+      try {
+        frame.executeJavaScript(script, true).catch(() => {});
+      } catch { /* frame 已销毁等，忽略 */ }
+    }
   }
 
   /** 向单个 frame 注入主世界脚本，并回放当前音频输出设备 */

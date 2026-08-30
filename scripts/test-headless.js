@@ -128,6 +128,12 @@ function electronStub() {
         return ses;
       },
     },
+    // v0.1.11 自动登录：safeStorage 桩（base64 加密模拟 DPAPI）
+    safeStorage: {
+      isEncryptionAvailable: () => true,
+      encryptString: (s) => Buffer.from(String(s), 'utf8'),
+      decryptString: (buf) => buf.toString('utf8'),
+    },
     Menu: {
       setApplicationMenu() {},
       buildFromTemplate: () => ({ popup() {} }),
@@ -291,6 +297,29 @@ console.log('\n[2] settings');
     st2.load();
     assert.strictEqual(st2.getAll().volume, 0.6);
     assert.strictEqual(st2.getAll().serverUrl, 'http://127.0.0.1:5666');
+  });
+  ok('自动登录凭据：密码加密落盘、明文不暴露、可解密回读（v0.1.11）', () => {
+    st.update({ loginUsername: 'my-account', loginPassword: 'my-secret-pass' });
+    // getAll 不暴露密文与明文，只给布尔标志
+    const s = st.getAll();
+    assert.strictEqual(s.loginUsername, 'my-account');
+    assert.strictEqual(s.loginPasswordSet, true);
+    assert.ok(!('loginPassword' in s), 'getAll 不得含明文密码');
+    assert.ok(!('loginPasswordEnc' in s), 'getAll 不得含密文');
+    // 落盘文件不得出现明文密码
+    const raw = JSON.parse(require('fs').readFileSync(path.join(tmpUserData, 'settings.json'), 'utf8'));
+    assert.ok(!JSON.stringify(raw).includes('my-secret-pass'), 'settings.json 不得含明文密码');
+    assert.ok(raw.loginPasswordEnc, 'settings.json 应存加密密文');
+    // 主进程内部解密
+    const st3 = loadWithStub(path.join(ROOT, 'src/main/settings.js'), stub);
+    st3.load();
+    assert.strictEqual(st3.getLoginPassword(), 'my-secret-pass');
+    // 空密码更新不覆盖已存密码
+    st3.update({ loginUsername: 'my-account2' });
+    assert.strictEqual(st3.getLoginPassword(), 'my-secret-pass', '未提交密码时保持原密码');
+    // 清空账号时密码同步清除
+    st3.update({ loginUsername: '', loginPassword: '' });
+    assert.strictEqual(st3.getLoginPassword(), '');
   });
   ok('readConfiguredOriginsPreReady 提取 http 来源（排除 https）', () => {
     st.update({ remoteUrl: 'https://secure.example.com' }); // 应被排除

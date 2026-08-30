@@ -42,6 +42,9 @@ function showTest(ok, text) {
   $('minimizeToTray').checked = Boolean(current.minimizeToTray);
   $('hardwareAcceleration').checked = current.hardwareAcceleration !== false;
   $('hardwareAcceleration').addEventListener('change', () => { hardwareTouched = true; });
+  // 自动登录凭据（v0.1.11）：账号回显；密码不回显明文（仅显示已设置状态）
+  $('loginUsername').value = current.loginUsername || '';
+  $('loginPassword').placeholder = current.loginPasswordSet ? '已保存（留空保持不变）' : '未设置';
 
   // 欢迎模式：简化页面
   if (isWelcome) {
@@ -123,6 +126,13 @@ $('btnSave').addEventListener('click', async () => {
   // 仅当用户显式改动过硬件加速开关才提交该字段（审查轮 9 P1：避免
   // 渲染异常机器上保存任意设置把软件渲染意外切回硬件加速 → 黑屏回归）
   if (hardwareTouched) patch.hardwareAcceleration = $('hardwareAcceleration').checked;
+  // 自动登录凭据（v0.1.11）：账号变化才提交；密码仅当用户输入了新值才提交
+  // （留空 = 保持原密码不变）
+  if ($('loginUsername').value.trim() !== (current.loginUsername || '')) {
+    patch.loginUsername = $('loginUsername').value.trim();
+  }
+  const newPass = $('loginPassword').value;
+  if (newPass) patch.loginPassword = newPass;
   // 音频设备：仅当选择项有变化时才发送（避免空列表时误清空）
   const sel = $('deviceSelect').value;
   const curDevice = (current && current.audioDeviceId) || '';

@@ -1,6 +1,6 @@
 # FN Music PC 项目交接文档（HANDOVER）
 
-> 生成时间：2026-08-30（v0.1.6 完成后）
+> 生成时间：2026-08-30（v0.1.17 已发布 GitHub）
 > 用途：将本项目全部上下文、经验与当前状态迁移到新会话/新对话，新会话应首先阅读本文件与 README.md / REVIEW.md / docs/ARCHITECTURE.md。
 
 ---
@@ -23,9 +23,9 @@
 | 4 | 可选音频输出设备 | 设置页 + 独立音频面板（audio-panel），setSinkId 双通道（元素 + AudioContext） |
 | 5 | 不修改网页前端 | 纯运行时注入（隔离世界 preload + 主世界脚本），零文件改动 |
 | 6 | 桌面歌词（可选） | **已按用户授权移除（v0.1.6）**——多次尝试无法稳定获取歌词 |
-| 7 | git 版本控制 | 仓库历史干净（曾重建为单提交），20 个提交 |
-| 8 | 多轮审查 | 7 轮审查记录于 REVIEW.md；**用户要求每轮修复后至少三轮独立审查再汇报** |
-| 9 | 去除个人信息 | scripts/check-privacy.js（git index 解析扫描）46 文件 0 违规 |
+| 7 | git 版本控制 | 仓库历史干净（曾重建为单提交，后经 filter-branch 隐私清洗），66 个提交 |
+| 8 | 多轮审查 | 16 轮审查记录于 REVIEW.md（收尾再补 1 轮）；**用户要求每轮修复后至少三轮独立审查再汇报** |
+| 9 | 去除个人信息 | scripts/check-privacy.js（git index 解析扫描）45 文件 0 违规 |
 | 10 | 注释与开源合规 | 全文件头注释；THIRD_PARTY_NOTICES.md（Electron/electron-builder/Listen1/YesPlayMusic/MusicBox，MIT） |
 
 ## 3. 技术架构
@@ -46,7 +46,7 @@
 - **安全上下文**：`unsafely-treat-insecure-origin-as-secure` 标记已配置 http 来源（否则 mediaDevices 不可用）
 - **托盘**：X 关闭最小化到托盘（可关）、菜单（显示/隐藏/设置/退出）、单实例恢复窗口
 
-## 4. 版本历史（git 46 提交）
+## 4. 版本历史（git 66 提交）
 
 - **v0.1.0** 初始：网页嵌套/登录态/cookie 持久化/欢迎页/设备/歌词框架/托盘前身
 - **v0.1.1** 黑屏修复：禁用硬件加速 + ready-to-show 兜底
@@ -72,7 +72,7 @@
 2. **curl 的 schannel TLS 被沙箱拦截**，Electron 二进制需 `node scripts/electron-download.js`（node fetch 可用；GitHub 慢/超时 → npmmirror 镜像自动回退）；electron@33.4.11（v44 在该环境 Chromium 初始化崩溃，33 亦崩——**本沙箱内 Electron GUI 无法启动**，只能无头测试 + 用户真机验证）；
 3. **electron-builder 派生子进程（npm/app-builder/7za/makensis）触发沙箱 EPERM**：打包命令必须带 `sandbox_permissions: "danger-full-access"`（先被拒后升级，需用户批准）+ 环境变量 `ELECTRON_BUILDER_CACHE=`.builder-cache`、`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`；
 4. **输出目录被锁定（EBUSY）**：win-unpacked 的 app.asar 被占用（用户正在运行/杀软扫描）→ 先 `Stop-Process FNMusicPC`，仍锁则用 `--config.directories.output=dist-new` 换目录构建后复制产物；
-5. **git filter-branch 在沙箱不可用**（sh 信号管道被禁）→ 清理历史用「重建单提交仓库」（`rm -rf .git && git init`）；
+5. **git filter-branch 可用、filter-repo 不可用**：隐私清洗用 `git filter-branch --tree-filter/--msg-filter/--env-filter`（改写工作树/提交信息/作者邮箱），完成后必须 `git reflog expire --expire=now --all && git gc --prune=now --aggressive` 否则旧对象仍在对象库；「重建单提交仓库」是早期手段（丢历史），后期一律 filter-branch；
 6. 构建产物 exe 文件名含版本号，旧版本清理后避免用户误用。
 
 ### 5.2 产品技术经验
@@ -90,23 +90,25 @@
 - 真实地址只在 gitignore 的 `dev.config.json` 与 `新建 文本文档.txt`（用户任务笔记，勿动勿提交）；
 - 日志/诊断对 URL 脱敏（sanitizeUrl：剥 query/hash、token 打码）、userData 路径 %USERPROFILE% 化。
 
-## 6. 当前状态（v0.1.17，工作区干净）
+## 6. 当前状态（v0.1.17 已发布，工作区干净）
 
-- git：46 提交，HEAD = v0.1.17 修复提交（+版本号待提交）；`git status` 干净
+- git：66 提交（HEAD 为 HANDOVER 定稿提交），作者全部匿名 fnmusic-pc@users.noreply.github.com；`git status` 干净
 - 测试：`npm test` → scripts/test-headless.js **60/60 通过**
-- 隐私：`npm run check:privacy` → 42 文件 0 违规（含 FN Connect 个人路径段检测）
-- 产物：`dist\FNMusicPC Setup 0.1.17.exe`（安装版）、`dist\FNMusicPC 0.1.17.exe`（便携版）
+- 隐私：`npm run check:privacy` → 0 违规；**全 git 历史（含对象库）敏感 blob 已清零**（三轮发布前审查）
+- 产物：`dist\FNMusicPC Setup 0.1.17.exe`（安装版）、`dist\FNMusicPC 0.1.17.exe`（便携版），已上传 GitHub Release
+- **已发布**：源码 https://github.com/JuuWaii/fnmusic_pc ｜ Release https://github.com/JuuWaii/fnmusic_pc/releases/tag/v0.1.17
 - 依赖：electron ^33.4.11、electron-builder ^26.15.3、node_modules 已装（含手动下载的 electron 二进制）
+- 推送环境：git 全局代理指向本机 clash-verge（端口 7890；代理 IP 属个人信息，只记在 gitignore 的 dev.config.json，勿入库）；GitHub 认证用 SSH（本机 id_rsa 已绑定账号）
 
-## 7. 待办与验证清单（用户真机）
+## 7. 后续工作清单（按优先级）
 
-1. **v0.1.17 验证（重点）**：仅配置 remoteUrl（FN Connect）时登录页应自动填写提交；本地模式同验；
-2. **已知问题（后续版本修复）**：FN Connect 远程连接时音频设备枚举失败（mediaDevices API 不可用），内网地址正常——疑似远程跳转链页面非安全上下文，待下版本修复；
-2. **登录态验证**：登录一次 → 托盘退出 → 重开免登录；看日志 Cookie 文件与诊断 `cookieCount/localStorage`；
-3. **音频面板**：工具栏 🔊 → 设备即选即生效 + 音量联动（已确认正常，回归验证）；
-4. **欢迎页测试**：移走 dev.config.json 后启动应显示欢迎页（地址预填来自 dev.config.json）——v0.1.7 已修复该路径；
-5. **GitHub 发布（已完成 v0.1.17）**：https://github.com/JuuWaii/fnmusic_pc（源码）+ https://github.com/JuuWaii/fnmusic_pc/releases/tag/v0.1.17（Release：安装版+便携版）；发布前已完成三轮审查（git 历史隐私重写：作者匿名化/敏感 blob 清零）+ 关于区占位替换 + README 歌词残留清理；后续版本更新后推送需重新走隐私检查；
-6. 遗留：dist/win-unpacked 与 dist-new 曾因 Defender 占用无法清理（EBUSY），如占用已释放可删除。
+1. **[待办] FN Connect 音频设备枚举失败修复**：远程连接时音频面板报「设备枚举失败：mediaDevices API 不可用」，内网地址正常。日志 14:03:04 有「枚举音频设备失败（全部 frame）」空错误。怀疑：FN Connect 302 跳转链最终页面（内网 /music/login）非安全上下文，或跳转链 origin 与安全上下文标记不匹配。排查方向：a) 检查远程场景 `unsafely-treat-insecure-origin-as-secure` 是否覆盖最终 origin；b) 确认枚举执行 frame 的 `isSecureContext`（诊断接口已输出该字段）；c) 可能需要为远程跳转链目标 origin 补安全上下文标记（重启生效提示）。
+2. **[待办] AI 生成声明标注**：README / settings.html 关于区 标注「本项目由 AI 辅助生成」（用户要求）。发布前需同步更新：README 开头、settings.html 关于区、THIRD_PARTY_NOTICES.md 或新增 NOTICE 说明；改后重新打包 + 重新发布 Release。
+3. **登录态验证**：登录一次 → 托盘退出 → 重开免登录；看日志 Cookie 文件与诊断 `cookieCount/localStorage`；
+4. **音频面板回归**：工具栏 🔊 → 设备即选即生效 + 音量联动（已确认正常，回归验证）；
+5. **欢迎页回归**：移走 dev.config.json 后启动应显示欢迎页（地址预填来自 dev.config.json）——v0.1.7 已修复该路径；
+6. **版本发布流程**：代码修改 → npm test → check:privacy → 打包 → git push（SSH）→ 创建 Release + 上传（PAT 需重新创建，旧 token 已建议吊销）；推送前必须重跑「全 git 历史敏感扫描」（作者/邮箱/用户名/真实 IP）；
+7. 遗留：dist/win-unpacked 与 dist-new 曾因 Defender 占用无法清理（EBUSY），如占用已释放可删除。
 
 ## 8. 常用命令速查
 

@@ -211,12 +211,12 @@ function createGuestView() {
     if (frame && (!wc.mainFrame || frame !== wc.mainFrame)) {
       injectIntoFrame(frame);
       // 自动登录覆盖后加载 iframe（审查轮 11 A P2）：运行时新建的
-      // iframe 登录表单也注入自动填写（带 origin 过滤）
+      // iframe 登录表单也注入自动填写（带 origin 过滤 + 页面侧校验）
       const s = settings.getAll();
       if (s.loginUsername && s.loginPasswordSet
         && security.isTrustedOrigin(() => settings.getAll(), frame.url || '')) {
         try {
-          frame.executeJavaScript(autoLoginSnippet(s.loginUsername, settings.getLoginPassword(), serverUrl.trustedOrigins(s)), true).catch(() => {});
+          frame.executeJavaScript(autoLoginSnippet(s.loginUsername, settings.getLoginPassword(), serverUrl.trustedOrigins(s), false), true).catch(() => {});
         } catch { /* 忽略 */ }
       }
     }
@@ -252,33 +252,38 @@ function createGuestView() {
   /**
    * 自动登录填写脚本（注入到页面主世界执行）。
    *
-   * v0.1.16 简化版（用户需求：抛弃等待循环/结果判定/超时逻辑）：
-   * - 页面打开后启动循环检测，持续检测「登录页是否加载完成」；
-   * - 判定标准：可见密码输入框出现（无论页面其余部分渲染进度）；
-   * - 检测到即可登录 → 立即填写账号密码并点击登录按钮，只提交一次；
-   * - 提交后清理循环（任务完成），无成功/错误/重试/超时逻辑。
-   * 仅在页面出现密码输入框时动作；无凭据则静默退出。
+   * v0.1.17 修复：页面侧 origin 校验仅对子 frame 严格——
+   * 主 frame 是用户配置地址（serverUrl/remoteUrl）的导航结果，FN Connect
+   * 302 到内网 NAS 属正常导航链，origin 变化不应拦截（v0.1.14 修复后被
+   * 页面侧校验又挡回，用户只配置 remoteUrl 时内网登录页无法自动填写）。
+   * - 主 frame：isMain=true → 跳过页面侧校验（主进程已信任）；
+   * - 子 frame：isMain=false → 校验 location.origin ∈ 已配置 origins ∪
+   *   FN Connect 官方代理域（防跨域 iframe 被填凭据）。
+   * 循环检测：150ms 轮询 + MutationObserver（childList/subtree/attributes
+   * 全监听，含 style 切换）；检测到可见密码框 → 立即填表登录一次 → 清理。
    */
-  function autoLoginSnippet(username, password, trustedOrigins) {
+  function autoLoginSnippet(username, password, trustedOrigins, isMain) {
     const creds = JSON.stringify({ username: String(username || ''), password: String(password || '') });
     const origins = JSON.stringify(Array.isArray(trustedOrigins) ? trustedOrigins : []);
+    const mainFrame = isMain ? 1 : 0;
     return `(() => {
       if (window.__fnmusicAutoLogin) return;
       window.__fnmusicAutoLogin = true;
       let creds = null, origins = null;
       try { creds = ${creds}; origins = ${origins}; } catch (e) { return; }
       if (!creds || !creds.username || !creds.password) return;
-      // 审查轮 14 C P2：页面侧 origin 校验——仅当当前页面属于「已配置服务器
-      // origin ∪ FN Connect 官方代理域」时才自动填写，防止用户从信任页导航到
-      // 外站（钓鱼/无关登录表单）时凭据被误填。
+      // 审查轮 14 C P2 + v0.1.17：子 frame 才做页面侧 origin 校验。
+      // 主 frame（mainFrame=1）信任导航链（用户配置地址 302 到内网属正常）。
       // 注：模板字符串中正则须用双反斜杠（\\\\/ 与 \\\\.），否则经字符串字面量
       // 解析后反斜杠丢失导致 SyntaxError（v0.1.14 失效根因）。
-      try {
-        const cur = location.origin;
-        const ok = origins.some((o) => o === cur)
-          || /^https:\\/\\/(?:[a-z0-9-]+\\.)*(?:fnos\\.net|5ddd\\.com|trzznas\\.com)$/i.test(location.host);
-        if (!ok) return;
-      } catch (e) { return; }
+      if (!${mainFrame}) {
+        try {
+          const cur = location.origin;
+          const ok = origins.some((o) => o === cur)
+            || /^https:\\/\\/(?:[a-z0-9-]+\\.)*(?:fnos\\.net|5ddd\\.com|trzznas\\.com)$/i.test(location.host);
+          if (!ok) return;
+        } catch (e) { return; }
+      }
       const setVal = (el, v) => {
         const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
         const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
@@ -357,18 +362,15 @@ function createGuestView() {
   }
 
   /** 向全部 frame 注入自动登录脚本（凭据来自设置，主进程直取明文）
-   * 审查轮 11 C P2 + 审查轮 14 修复：
-   * - 主 frame：始终注入——它是「用户配置地址的导航结果」，FN Connect 域名
-   *   会 302 到内网 NAS（origin 变化属正常导航链，非第三方内容）；
-   * - 子 frame：仍按 security.isTrustedOrigin 过滤——跨域 iframe（广告/第三方
-   *   嵌入）含密码框时不得填入凭据；
-   * - 页面侧：注入脚本内校验 location.origin ∈ 已配置 origins ∪ FN Connect
-   *   官方代理域（审查轮 14 C P2 收紧）。 */
+   * 审查轮 11 C P2 + 审查轮 14 + v0.1.17 修复：
+   * - 主 frame：始终注入，isMain=true（跳过页面侧 origin 校验）——它是
+   *   「用户配置地址的导航结果」，FN Connect 302 到内网 NAS 属正常导航链；
+   * - 子 frame：仍按 security.isTrustedOrigin 过滤 + 页面侧校验——跨域
+   *   iframe（广告/第三方嵌入）含密码框时不得填入凭据。 */
   function injectAutoLoginIntoFrames() {
     const s = settings.getAll();
     if (!s.loginUsername || !s.loginPasswordSet) return;
     const trusted = serverUrl.trustedOrigins(s);
-    const script = autoLoginSnippet(s.loginUsername, settings.getLoginPassword(), trusted);
     const frames = [];
     try {
       if (wc.mainFrame) {
@@ -382,6 +384,7 @@ function createGuestView() {
       const isMain = wc.mainFrame && frame === wc.mainFrame;
       // 子 frame 才做 origin 过滤（主 frame 是用户配置地址的导航链，信任）
       if (!isMain && !security.isTrustedOrigin(() => settings.getAll(), frame.url || '')) continue;
+      const script = autoLoginSnippet(s.loginUsername, settings.getLoginPassword(), trusted, isMain);
       try {
         frame.executeJavaScript(script, true).catch(() => {});
       } catch { /* frame 已销毁等，忽略 */ }

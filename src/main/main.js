@@ -24,6 +24,11 @@ const ipc = require('./ipc');
 const menu = require('./menu');
 const tray = require('./tray');
 
+// 【兼容性】禁用硬件加速：部分显卡/驱动/远程桌面环境下 Chromium GPU 合成失败，
+// 表现为窗口全黑且 ready-to-show 不触发（启动不弹窗）。音乐客户端渲染负载低，
+// 软件渲染（SwiftShader）足够流畅且兼容性最好。
+app.disableHardwareAcceleration();
+
 // Windows 通知/任务栏分组标识（需在 ready 前设置）
 app.setAppUserModelId('com.fnmusic.pc');
 

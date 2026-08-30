@@ -110,7 +110,20 @@ function createMainWindow() {
     clearTimeout(reloadTimer);
     app.quit();
   });
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  // 渲染就绪后再显示；若 GPU/渲染异常导致 ready-to-show 迟迟不触发，
+  // 5 秒后强制显示窗口（黑屏问题兜底），并记录日志便于排查。
+  const readyTimer = setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+      logger.warn('ready-to-show 超时（5s），强制显示窗口——疑似渲染异常');
+      mainWindow.show();
+    }
+  }, 5000);
+  mainWindow.once('ready-to-show', () => {
+    clearTimeout(readyTimer);
+    mainWindow.show();
+  });
+  mainWindow.on('show', () => logger.info('主窗口已显示'));
+  mainWindow.on('hide', () => logger.info('主窗口已隐藏'));
 
   loadHome();
   return mainWindow;

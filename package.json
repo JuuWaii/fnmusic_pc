@@ -1,6 +1,6 @@
 {
   "name": "fnmusic-pc",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "飞牛音乐（fnOS Music）网页的 PC 客户端：网页嵌套播放，保留登录态，支持 FN Connect 远程访问与音频输出设备选择",
   "main": "src/main/main.js",
   "author": "fnmusic-pc contributors",

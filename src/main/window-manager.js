@@ -348,8 +348,11 @@ function createGuestView() {
   }
 
   /** 向全部 frame 注入自动登录脚本（凭据来自设置，主进程直取明文）
-   * 审查轮 11 C P2：仅向「已配置服务器 origin」的 frame 注入——避免跨域
-   * iframe（广告/第三方嵌入）含密码框时被填入凭据。 */
+   * 审查轮 11 C P2 + 审查轮 14 修复：
+   * - 主 frame：始终注入——它是「用户配置地址的导航结果」，FN Connect 域名
+   *   会 302 到内网 NAS（origin 变化属正常导航链，非第三方内容）；
+   * - 子 frame：仍按 security.isTrustedOrigin 过滤——跨域 iframe（广告/第三方
+   *   嵌入）含密码框时不得填入凭据。 */
   function injectAutoLoginIntoFrames() {
     const s = settings.getAll();
     if (!s.loginUsername || !s.loginPasswordSet) return;
@@ -364,8 +367,9 @@ function createGuestView() {
       }
     } catch { /* 忽略 */ }
     for (const frame of frames) {
-      // origin 过滤：仅信任已配置的服务器来源（跨域 iframe 不注入）
-      if (!security.isTrustedOrigin(() => settings.getAll(), frame.url || '')) continue;
+      const isMain = wc.mainFrame && frame === wc.mainFrame;
+      // 子 frame 才做 origin 过滤（主 frame 是用户配置地址的导航链，信任）
+      if (!isMain && !security.isTrustedOrigin(() => settings.getAll(), frame.url || '')) continue;
       try {
         frame.executeJavaScript(script, true).catch(() => {});
       } catch { /* frame 已销毁等，忽略 */ }

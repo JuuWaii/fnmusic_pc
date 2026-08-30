@@ -49,11 +49,12 @@
     <!-- 自动登录（v0.1.11：门户 session cookie 重启丢失时免手动输入） -->
     <section id="sectionAutoLogin">
       <h2>自动登录</h2>
-      <label for="loginUsername">飞牛账号</label>
+      <label for="loginUsername">飞牛音乐账号</label>
       <input id="loginUsername" type="text" spellcheck="false" autocomplete="off" />
       <label for="loginPassword">密码（可选）</label>
       <input id="loginPassword" type="password" autocomplete="off" />
       <p class="hint">
+        此处为飞牛音乐应用账号，并非飞牛 NAS 系统账号（登录页输入框提示「请输入用户名」）。
         登录页出现时客户端自动填写并提交。密码经系统安全存储（DPAPI）加密保存在本机，
         不写入日志、不上传。仅当网页要求登录时使用；若不确定可留空。
       </p>

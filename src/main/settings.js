@@ -182,9 +182,11 @@ function load() {
  * 审查轮 11 A P3：账号/密码长度上限（防超大值写盘） */
 function update(patch) {
   const p = patch || {};
-  // 登录密码特殊处理：明文 → 加密后存入 loginPasswordEnc（上限 512 字符）
+  // 登录密码特殊处理：明文 → 加密后存入 loginPasswordEnc（上限 512 字符；
+  // 纯空格视为未填写——审查轮 13 A P3）
   if ('loginPassword' in p) {
-    const plain = typeof p.loginPassword === 'string' ? p.loginPassword.slice(0, 512) : '';
+    const raw = typeof p.loginPassword === 'string' ? p.loginPassword : '';
+    const plain = raw.trim() ? raw.slice(0, 512) : '';
     state.loginPasswordEnc = encryptPassword(plain);
   }
   for (const k of Object.keys(p)) {

@@ -305,12 +305,27 @@ function navigate(action) {
   if (!guestView || shellMode !== 'app') return;
   const wc = guestView.webContents;
   switch (action) {
-    case 'back': wc.canGoBack() && wc.goBack(); break;
-    case 'forward': wc.canGoForward() && wc.goForward(); break;
+    case 'back': if (canGoBack(wc)) goBack(wc); break;
+    case 'forward': if (canGoForward(wc)) goForward(wc); break;
     case 'reload': wc.reload(); startWatchdog(); break;
     case 'home': loadHome(); break;
     default: break;
   }
+}
+
+/* ---------------- 导航历史（Electron 33+ 推荐 navigationHistory） ---------------- */
+
+function canGoBack(wc) {
+  try { return wc.navigationHistory ? wc.navigationHistory.canGoBack() : wc.canGoBack(); } catch { return false; }
+}
+function canGoForward(wc) {
+  try { return wc.navigationHistory ? wc.navigationHistory.canGoForward() : wc.canGoForward(); } catch { return false; }
+}
+function goBack(wc) {
+  try { if (wc.navigationHistory) wc.navigationHistory.goBack(); else wc.goBack(); } catch { /* 忽略 */ }
+}
+function goForward(wc) {
+  try { if (wc.navigationHistory) wc.navigationHistory.goForward(); else wc.goForward(); } catch { /* 忽略 */ }
 }
 
 /* ---------------- 状态推送（URL 脱敏：只含 origin+path，去掉 query/hash） ---------------- */
@@ -335,8 +350,8 @@ function pushStatus() {
     shellMode,
     url: wc ? sanitizeUrl(wc.getURL()) : '',
     title: wc ? wc.getTitle() : '',
-    canGoBack: wc ? wc.canGoBack() : false,
-    canGoForward: wc ? wc.canGoForward() : false,
+    canGoBack: wc ? canGoBack(wc) : false,
+    canGoForward: wc ? canGoForward(wc) : false,
     isLoading: wc ? wc.isLoading() : false,
   };
   try {

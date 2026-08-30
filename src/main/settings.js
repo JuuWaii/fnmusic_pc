@@ -24,6 +24,41 @@ const DEFAULTS = Object.freeze({
   lyricsOpacity: 0.9,       // 桌面歌词窗口不透明度 0.3~1
 });
 
+/**
+ * 启动早期（app ready 之前）读取已配置的服务器来源列表。
+ *
+ * 用途：飞牛音乐网页通常运行在纯 HTTP 的内网地址上，Chromium 视其为
+ * 「非安全上下文」，页面内 navigator.mediaDevices 不可用（音频设备枚举失败）。
+ * 主进程在启动早期将这些来源加入 Chromium 的
+ * 'unsafely-treat-insecure-origin-as-secure' 开关，仅对用户自己配置的
+ * http 地址生效，使其获得安全上下文能力（设备枚举 / setSinkId 等）。
+ *
+ * 注意：本函数不得依赖任何 Electron 运行时状态（仅使用 app 的基础路径 API）。
+ */
+function readConfiguredOriginsPreReady() {
+  const origins = new Set();
+  const candidates = [];
+  // 1) 开发期配置（dev.config.json，git 忽略）
+  try {
+    if (!app.isPackaged && process.env.FNMUSIC_NO_DEV_CONFIG !== '1') {
+      const dev = JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'dev.config.json'), 'utf8'));
+      candidates.push(dev.serverUrl, dev.remoteUrl);
+    }
+  } catch { /* 忽略 */ }
+  // 2) 用户已保存的设置（userData/settings.json）
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'settings.json'), 'utf8'));
+    candidates.push(raw.serverUrl, raw.remoteUrl);
+  } catch { /* 忽略 */ }
+  for (const u of candidates) {
+    try {
+      const url = new URL(String(u));
+      if (url.protocol === 'http:' && url.hostname) origins.add(url.origin);
+    } catch { /* 忽略非法地址 */ }
+  }
+  return [...origins];
+}
+
 /** 可持久化的键集合（防止写入未知字段） */
 const KEYS = Object.keys(DEFAULTS);
 
@@ -103,4 +138,4 @@ function getAll() {
   return { ...state };
 }
 
-module.exports = { load, update, getAll, DEFAULTS };
+module.exports = { load, update, getAll, readConfiguredOriginsPreReady, DEFAULTS };

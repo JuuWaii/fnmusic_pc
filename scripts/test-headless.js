@@ -204,6 +204,18 @@ console.log('\n[2] settings');
     assert.strictEqual(st2.getAll().lyricsOpacity, 0.6);
     assert.strictEqual(st2.getAll().serverUrl, 'http://127.0.0.1:5666');
   });
+  ok('readConfiguredOriginsPreReady 提取 http 来源（排除 https）', () => {
+    st.update({ remoteUrl: 'https://secure.example.com' }); // 应被排除
+    const origins = st.readConfiguredOriginsPreReady();
+    assert.ok(origins.includes('http://127.0.0.1:5666'), 'http 来源应被包含');
+    assert.ok(!origins.some((o) => o.includes('example.com')), 'https 来源不应被包含');
+  });
+  ok('readConfiguredOriginsPreReady 忽略非法来源', () => {
+    st.update({ serverUrl: 'not-a-url' });
+    const origins = st.readConfiguredOriginsPreReady();
+    assert.ok(Array.isArray(origins));
+    st.update({ serverUrl: 'http://127.0.0.1:5666' }); // 恢复
+  });
 }
 
 console.log('\n[3] lyrics（LRC 解析 + 窗口状态机）');

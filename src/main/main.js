@@ -26,6 +26,20 @@ const menu = require('./menu');
 // Windows 通知/任务栏分组标识（需在 ready 前设置）
 app.setAppUserModelId('com.fnmusic.pc');
 
+// 【重要】启动早期（Chromium 初始化前）：把已配置的 http 服务器来源标记为安全上下文。
+// 原因：飞牛音乐网页多为内网纯 HTTP 地址，Chromium 视其为非安全上下文，
+// 页面内 navigator.mediaDevices 不可用，导致音频输出设备无法枚举/定向。
+// 此开关仅作用于用户自己配置的来源，不影响其他站点（详见 settings.js 说明）。
+try {
+  const secureOrigins = settings.readConfiguredOriginsPreReady();
+  if (secureOrigins.length) {
+    app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', secureOrigins.join(','));
+    logger.info('已将以下 HTTP 来源标记为安全上下文:', secureOrigins.join(', '));
+  }
+} catch (e) {
+  logger.warn('安全上下文标记失败（不影响启动）:', e.message);
+}
+
 // 单实例：重复启动时聚焦已有窗口
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {

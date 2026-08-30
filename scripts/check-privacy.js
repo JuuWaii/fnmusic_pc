@@ -95,6 +95,9 @@ const PATTERNS = [
   { name: 'URL 内嵌凭据', re: /https?:\/\/[^\s/]+:[^\s/@]+@/ },
   // FN Connect 个人远程访问域名（官方代理域名的子域即个人地址）
   { name: 'FN Connect 个人域名', re: /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:fnos\.net|5ddd\.com|trzznas\.com)\b/i },
+  // FN Connect 官方域后的个人路径段（如 https://fnos.net/<用户名>）——审查轮 9 B P1：
+  // 子域正则无法命中路径式个人地址，单列该模式兜底（xxx 等示例前缀豁免见下方过滤）
+  { name: 'FN Connect 个人路径段', re: /fnos\.net\/(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\/|["'\s)]|$)/i },
 ];
 
 /** 文档/示例文件中允许出现示例 IP */
@@ -132,6 +135,12 @@ function checkFile(file) {
     if (name === 'FN Connect 个人域名' && ALLOW_FNCONNECT_FILES.has(file)) {
       // 文档中的说明性示例（如 https://xxxx.fnos.net）放行
       const filtered = matches.filter((m) => !/\bxxxx\./.test(m));
+      if (!filtered.length) continue;
+    }
+    // FN Connect 个人路径段：示例占位（xxxx / user-0001 / your-name 等中性值）与
+    // 通用入口路径（music）豁免，但仅限中性值（审查轮 9 B P1）
+    if (name === 'FN Connect 个人路径段') {
+      const filtered = matches.filter((m) => !/fnos\.net\/(?:xxxx|user-\d+|your-name|example|music)(?:\/|["'\s)]|$)/i.test(m));
       if (!filtered.length) continue;
     }
     violations++;

@@ -9,6 +9,13 @@ const $ = (id) => document.getElementById(id);
 const isWelcome = new URLSearchParams(location.search).get('welcome') === '1';
 let current = null;
 
+// 硬件加速「用户是否显式改动过」标记（审查轮 9 P1 修复）：
+// 与欢迎页一致——用户未触碰该开关时保存不提交 hardwareAcceleration，
+// 保持原设置不变。否则渲染异常机器上「打开设置窗口保存任意设置」会
+// 把软件渲染意外切回硬件加速 → 黑屏回归 + hardwareAccelUserSet 置位
+// 导致自动降级永久失效。
+let hardwareTouched = false;
+
 /** 轻提示 */
 function toast(text, isErr) {
   const el = $('toast');
@@ -34,6 +41,7 @@ function showTest(ok, text) {
   $('ignoreCertErrors').checked = Boolean(current.ignoreCertErrors);
   $('minimizeToTray').checked = Boolean(current.minimizeToTray);
   $('hardwareAcceleration').checked = current.hardwareAcceleration !== false;
+  $('hardwareAcceleration').addEventListener('change', () => { hardwareTouched = true; });
 
   // 欢迎模式：简化页面
   if (isWelcome) {
@@ -111,8 +119,10 @@ $('btnSave').addEventListener('click', async () => {
     accessMode: $('accessMode').value,
     ignoreCertErrors: $('ignoreCertErrors').checked,
     minimizeToTray: $('minimizeToTray').checked,
-    hardwareAcceleration: $('hardwareAcceleration').checked,
   };
+  // 仅当用户显式改动过硬件加速开关才提交该字段（审查轮 9 P1：避免
+  // 渲染异常机器上保存任意设置把软件渲染意外切回硬件加速 → 黑屏回归）
+  if (hardwareTouched) patch.hardwareAcceleration = $('hardwareAcceleration').checked;
   // 音频设备：仅当选择项有变化时才发送（避免空列表时误清空）
   const sel = $('deviceSelect').value;
   const curDevice = (current && current.audioDeviceId) || '';

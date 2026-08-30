@@ -12,6 +12,8 @@ const $ = (id) => document.getElementById(id);
 // 保持原设置不变——避免「默认勾选 → 意外从软件渲染切回硬件加速 →
 // 渲染异常机器黑屏/界面错乱」。
 let hardwareTouched = false;
+// 监听器在 init 之前挂载（审查轮 9 P3）：避免 IPC 返回前用户点击开关被忽略
+$('hardwareAcceleration').addEventListener('change', () => { hardwareTouched = true; });
 
 (async function init() {
   const s = await api.getSettings();
@@ -20,7 +22,6 @@ let hardwareTouched = false;
   $('musicPath').value = s.musicPath || '';
   $('accessMode').value = s.accessMode || 'auto';
   $('hardwareAcceleration').checked = s.hardwareAcceleration !== false;
-  $('hardwareAcceleration').addEventListener('change', () => { hardwareTouched = true; });
 })();
 
 /** 展示测试结果 */

@@ -71,7 +71,10 @@ function openSettingsWindow(welcome) {
     clearTimeout(settingsReadyTimer);
     settingsWindow.show();
   });
-  settingsWindow.on('closed', () => { settingsWindow = null; });
+  settingsWindow.on('closed', () => {
+    clearTimeout(settingsReadyTimer); // 审查轮 9 P3：与主窗口对齐，防止旧定时器误触发新窗口
+    settingsWindow = null;
+  });
 }
 
 /** 打开音频调节面板（独立小窗；设备/音量调整即时生效，无需保存） */
@@ -185,7 +188,8 @@ function register(ctx) {
     const needsRestart = 'hardwareAcceleration' in p && p.hardwareAcceleration !== prev.hardwareAcceleration;
 
     // 仅当「解析后的实际加载地址」发生变化时才重新加载主页（避免保存音量等无关设置时打断播放）
-    if ('serverUrl' in p || 'remoteUrl' in p || 'accessMode' in p) {
+    // 审查轮 9 P2：musicPath 变更同样影响解析结果（v0.1.8 起带路径地址也会追加），需联动重载
+    if ('serverUrl' in p || 'remoteUrl' in p || 'accessMode' in p || 'musicPath' in p) {
       const prevResolved = serverUrl.resolve(prev);
       const nextResolved = serverUrl.resolve(next);
       if (prevResolved.url !== nextResolved.url || prev.accessMode !== next.accessMode) {

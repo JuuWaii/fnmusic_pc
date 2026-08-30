@@ -221,18 +221,34 @@ console.log('\n[1] server-url');
     // 用户 remoteUrl 形如 https://fnos.net/<用户名>，路径非空但并非音乐入口 →
     // 必须追加 /music，否则进入 NAS 门户桌面
     const r = su.resolve({
-      serverUrl: '', remoteUrl: 'https://x.' + 'fnos.net/USER_PATH',
+      serverUrl: '', remoteUrl: 'https://x.' + 'fnos.net/user-0001',
       accessMode: 'remote', musicPath: '/music',
     });
-    assert.strictEqual(r.url, 'https://x.' + 'fnos.net/USER_PATH/music');
+    assert.strictEqual(r.url, 'https://x.' + 'fnos.net/user-0001/music');
   });
   ok('远程地址已含 /music 结尾则不重复追加', () => {
-    const r = su.applyMusicPath('https://x.' + 'fnos.net/USER_PATH/music', { musicPath: '/music' });
-    assert.strictEqual(r, 'https://x.' + 'fnos.net/USER_PATH/music');
+    const r = su.applyMusicPath('https://x.' + 'fnos.net/user-0001/music', { musicPath: '/music' });
+    assert.strictEqual(r, 'https://x.' + 'fnos.net/user-0001/music');
   });
   ok('musicPath 留空时带路径地址保持原样（不追加）', () => {
-    const r = su.applyMusicPath('https://x.' + 'fnos.net/USER_PATH', { musicPath: '' });
-    assert.strictEqual(r, 'https://x.' + 'fnos.net/USER_PATH');
+    const r = su.applyMusicPath('https://x.' + 'fnos.net/user-0001', { musicPath: '' });
+    assert.strictEqual(r, 'https://x.' + 'fnos.net/user-0001');
+  });
+  ok('applyMusicPath 边界：musicPath 无前导斜杠', () => {
+    const r = su.applyMusicPath('https://x.' + 'fnos.net/user-0001', { musicPath: 'music' });
+    assert.strictEqual(r, 'https://x.' + 'fnos.net/user-0001/music');
+  });
+  ok('applyMusicPath 边界：musicPath 带尾斜杠', () => {
+    const r = su.applyMusicPath('https://x.' + 'fnos.net/user-0001', { musicPath: '/music/' });
+    assert.strictEqual(r, 'https://x.' + 'fnos.net/user-0001/music');
+  });
+  ok('applyMusicPath 边界：输入 URL 带尾斜杠与 query', () => {
+    const r = su.applyMusicPath('https://x.' + 'fnos.net/user-0001/?a=1', { musicPath: '/music' });
+    assert.strictEqual(r, 'https://x.' + 'fnos.net/user-0001/music?a=1');
+  });
+  ok('applyMusicPath 边界：近似路径不误判（/music-box 仍追加）', () => {
+    const r = su.applyMusicPath('https://x.' + 'fnos.net/user-0001/music-box', { musicPath: '/music' });
+    assert.strictEqual(r, 'https://x.' + 'fnos.net/user-0001/music-box/music');
   });
   ok('isConfigured 判定', () => {
     assert.strictEqual(su.isConfigured({ serverUrl: '', remoteUrl: '' }), false);

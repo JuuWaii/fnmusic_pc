@@ -110,16 +110,33 @@ function applyToMediaElement(el) {
     const p = el.setSinkId(targetDeviceId);
     if (p && typeof p.then === 'function') {
       p.then(
-        () => appliedMedia.set(el, targetDeviceId),
-        () => { if (!targetDeviceId) appliedMedia.set(el, ''); }
+        () => {
+          appliedMedia.set(el, targetDeviceId);
+          logSinkResult('isolated:' + (el.tagName || '?'), true, 'sink=' + targetDeviceId);
+        },
+        (err) => {
+          if (!targetDeviceId) appliedMedia.set(el, '');
+          logSinkResult('isolated:' + (el.tagName || '?'), false, err && err.message || err);
+        }
       );
     } else {
       appliedMedia.set(el, targetDeviceId);
+      logSinkResult('isolated:' + (el.tagName || '?'), true, 'sink=' + targetDeviceId + ' (sync)');
     }
-  } catch {
+  } catch (err) {
     // 罕见：空 id 在某些实现上抛错——标记为"已应用"避免反复重试刷屏
     if (!targetDeviceId) appliedMedia.set(el, '');
+    logSinkResult('isolated:' + (el.tagName || '?'), false, err && err.message || err);
   }
+}
+
+/** 记录 setSinkId 结果到主进程日志（诊断用，限频） */
+let lastSinkLogTime = 0;
+function logSinkResult(kind, ok, detail) {
+  const now = Date.now();
+  if (now - lastSinkLogTime < 500) return; // 限频，避免刷屏
+  lastSinkLogTime = now;
+  ipcRenderer.send('fnmusic:log', 'sink[' + kind + '] ' + (ok ? 'OK' : 'FAIL') + ' ' + detail);
 }
 
 /** 对当前页面所有媒体元素应用输出设备 */

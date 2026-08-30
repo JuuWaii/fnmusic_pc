@@ -90,6 +90,15 @@ async function refreshDevices() {
 
 $('btnRefreshDevices').addEventListener('click', refreshDevices);
 
+/* ---------- 音频诊断 ---------- */
+$('btnDiag').addEventListener('click', async () => {
+  const pre = $('diagResult');
+  pre.classList.remove('hidden');
+  pre.textContent = '正在收集诊断信息…';
+  const r = await api.diagnoseAudio();
+  pre.textContent = JSON.stringify(r, null, 2);
+});
+
 /* ---------- 桌面歌词 ---------- */
 $('lyricsOpacity').addEventListener('input', () => {
   $('opacityValue').textContent = $('lyricsOpacity').value;

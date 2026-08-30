@@ -54,7 +54,9 @@
           <option value="">系统默认设备（跟随系统设置）</option>
         </select>
         <button id="btnRefreshDevices" class="ghost">刷新</button>
+        <button id="btnDiag" class="ghost" title="排查设备切换问题">诊断</button>
       </div>
+      <pre id="diagResult" class="diag hidden"></pre>
       <p class="hint">
         选择后立即生效：客户端会在网页播放器创建音频时自动将声音定向到所选设备。
         若列表为空，请确认已进入飞牛音乐页面（设备枚举依赖页面环境）。

@@ -80,20 +80,46 @@ if (typeof window !== 'undefined') {
 
     let sinkId = ''; // 当前目标音频输出设备
 
+    /* ---- 诊断统计（供主进程 /app:diagnose-audio 读取） ---- */
+    const diag = {
+      injected: true,
+      sinkId: '',
+      contexts: 0,
+      elements: 0,
+      iframes: 0,
+      audioContextPatched: false,
+      fetchHooked: false,
+      xhrHooked: false,
+      sinkResults: [], // 最近 20 条 setSinkId 结果
+    };
+    function diagPush(kind, ok, detail) {
+      diag.sinkResults.push({ t: Date.now(), kind, ok, detail: String(detail || '').slice(0, 200) });
+      if (diag.sinkResults.length > 20) diag.sinkResults.shift();
+    }
+
     /* ---- 1. 音频输出设备 ---- */
 
     /** 对主文档媒体元素应用输出设备 */
     function applySinkToElements() {
       try {
         const els = document.querySelectorAll('audio, video');
+        diag.elements = els.length;
         for (const el of els) {
           if (typeof el.setSinkId !== 'function') continue;
           if (el.__fnSinkApplied === sinkId) continue;
           el.__fnSinkApplied = sinkId;
           try {
             const p = el.setSinkId(sinkId);
-            if (p && typeof p.then === 'function') p.catch(() => { el.__fnSinkApplied = undefined; });
-          } catch { el.__fnSinkApplied = undefined; }
+            if (p && typeof p.then === 'function') {
+              p.then(() => diagPush('element:' + (el.tagName || '?'), true, 'sink=' + sinkId))
+               .catch((err) => { el.__fnSinkApplied = undefined; diagPush('element:' + (el.tagName || '?'), false, err && err.message || err); });
+            } else {
+              diagPush('element:' + (el.tagName || '?'), true, 'sink=' + sinkId + ' (sync)');
+            }
+          } catch (err) {
+            el.__fnSinkApplied = undefined;
+            diagPush('element', false, err && err.message || err);
+          }
         }
       } catch { /* 页面未就绪等，忽略 */ }
     }
@@ -107,9 +133,12 @@ if (typeof window !== 'undefined') {
       const PatchedAC = function () {
         const ctx = new OrigAC(...arguments);
         liveContexts.push(ctx);
+        diag.contexts = liveContexts.length;
         setTimeout(() => {
           if (ctx.setSinkId && sinkId) {
-            ctx.setSinkId(sinkId).catch(() => {});
+            ctx.setSinkId(sinkId)
+              .then(() => diagPush('audio-context', true, 'sink=' + sinkId))
+              .catch((err) => diagPush('audio-context', false, err && err.message || err));
           }
         }, 0);
         return ctx;
@@ -119,6 +148,7 @@ if (typeof window !== 'undefined') {
       PatchedAC.__fnSinkPatched = true;
       window.AudioContext = PatchedAC;
       if (window.webkitAudioContext) window.webkitAudioContext = PatchedAC;
+      diag.audioContextPatched = true;
     }
 
     // 对已创建的 AudioContext 重定向（设备切换）
@@ -137,10 +167,29 @@ if (typeof window !== 'undefined') {
       if (!d || typeof d !== 'object') return;
       if (d.__fnmusicSetSink && typeof d.__fnmusicSetSink.deviceId === 'string') {
         sinkId = d.__fnmusicSetSink.deviceId;
+        diag.sinkId = sinkId;
+        diagPush('switch', true, 'device=' + sinkId);
         applySinkToElements();
         applySinkToContexts();
       }
     });
+
+    // 主进程诊断读取接口
+    window.__fnmusicDiagnose = () => {
+      diag.iframes = document.querySelectorAll('iframe').length;
+      diag.sinkId = sinkId;
+      diag.contexts = liveContexts.length;
+      return diag;
+    };
+    // 立即设置初始设备（注入后由主进程回放当前设置）
+    window.__fnmusicSetSinkNow = (deviceId) => {
+      if (typeof deviceId === 'string') {
+        sinkId = deviceId;
+        diag.sinkId = deviceId;
+        applySinkToElements();
+        applySinkToContexts();
+      }
+    };
 
     // 动态创建的媒体元素（rAF 去抖）
     if (typeof MutationObserver !== 'undefined') {
@@ -172,6 +221,7 @@ if (typeof window !== 'undefined') {
 
     const origFetch = window.fetch;
     if (typeof origFetch === 'function') {
+      diag.fetchHooked = true;
       window.fetch = function (...args) {
         const p = origFetch.apply(this, args);
         try {
@@ -196,6 +246,7 @@ if (typeof window !== 'undefined') {
 
     const XHR = window.XMLHttpRequest;
     if (XHR && XHR.prototype) {
+      diag.xhrHooked = true;
       const origOpen = XHR.prototype.open;
       const origSend = XHR.prototype.send;
       XHR.prototype.open = function (method, url) {

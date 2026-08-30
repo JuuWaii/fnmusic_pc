@@ -31,8 +31,9 @@ const api = {
   /* ---- 数据清理 ---- */
   clearData: () => ipcRenderer.invoke('data:clear'),
 
-  /* ---- 关于 ---- */
+  /* ---- 关于 / 诊断 ---- */
   getAppInfo: () => ipcRenderer.invoke('app:info'),
+  diagnoseAudio: () => ipcRenderer.invoke('app:diagnose-audio'),
 
   /* ---- 窗口 ---- */
   openSettings: (welcome) => ipcRenderer.send('settings:open', Boolean(welcome)),

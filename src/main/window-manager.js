@@ -126,12 +126,48 @@ function createGuestView() {
   });
 
   // 主世界注入（AudioContext 定向 / 歌词捕获）
-  wc.on('dom-ready', () => {
-    const script = getMainWorldScript();
-    if (script) {
-      wc.executeJavaScript(script).catch((e) => logger.warn('主世界注入失败:', e.message));
+  // 注：飞牛门户可能把应用渲染在（跨域）iframe 中，因此向主 frame 与全部子 frame 注入，
+  // 并通过 frame-created 覆盖运行时动态创建的 iframe。
+  wc.on('dom-ready', () => injectMainWorldIntoFrames());
+  wc.on('frame-created', (_e, details) => {
+    const frame = details && details.frame;
+    if (frame && (!wc.mainFrame || frame !== wc.mainFrame)) {
+      injectIntoFrame(frame);
     }
   });
+
+  /** 向主 frame 及其全部子 frame 注入主世界脚本 */
+  function injectMainWorldIntoFrames() {
+    const script = getMainWorldScript();
+    if (!script) return;
+    const frames = [];
+    try {
+      if (wc.mainFrame) {
+        frames.push(wc.mainFrame);
+        for (const f of wc.mainFrame.frames || []) frames.push(f);
+      }
+    } catch (e) {
+      logger.warn('枚举 frame 失败:', e.message);
+    }
+    for (const frame of frames) injectIntoFrame(frame);
+  }
+
+  /** 向单个 frame 注入主世界脚本，并回放当前音频输出设备 */
+  function injectIntoFrame(frame) {
+    if (!frame || typeof frame.executeJavaScript !== 'function') return;
+    const script = getMainWorldScript();
+    if (!script) return;
+    frame
+      .executeJavaScript(script)
+      .then(() => {
+        // 注入后立即回放已保存的音频输出设备（新 frame 没收到过切换消息）
+        const deviceId = settings.getAll().audioDeviceId || '';
+        return frame.executeJavaScript(
+          'window.__fnmusicSetSinkNow && window.__fnmusicSetSinkNow(' + JSON.stringify(deviceId) + ');'
+        );
+      })
+      .catch((e) => logger.warn('主世界注入失败:', e.message));
+  }
 
   wc.on('did-start-loading', () => pushStatus());
   wc.on('did-stop-loading', () => pushStatus());

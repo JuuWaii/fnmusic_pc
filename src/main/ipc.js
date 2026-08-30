@@ -10,6 +10,7 @@
  * - 所有通道参数在主进程侧再次校验。
  */
 const { ipcMain, BrowserWindow, app } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const logger = require('./logger');
 const settings = require('./settings');
@@ -222,6 +223,35 @@ function register(ctx) {
       logger.error('清除数据失败:', e.message);
       return { ok: false, error: e.message };
     }
+  });
+
+  /* ---------- 音频诊断（排查设备切换问题） ---------- */
+  ipcMain.handle('app:diagnose-audio', async (event) => {
+    if (!isTrustedShellSender(event)) return null;
+    const wc = windowManager.getGuestWebContents();
+    const result = { page: null, logTail: '' };
+    if (wc && !wc.isDestroyed()) {
+      try {
+        result.page = await wc.executeJavaScript(
+          '(window.__fnmusicDiagnose ? window.__fnmusicDiagnose() : { injected: false, note: "主世界脚本尚未注入（页面可能未加载完成）" })',
+          true
+        );
+      } catch (e) {
+        result.page = { injected: false, error: (e && e.message) || String(e) };
+      }
+    } else {
+      result.page = { injected: false, note: '页面未就绪' };
+    }
+    // 日志尾部（最近的 setSinkId 结果等）
+    try {
+      const logDir = path.join(app.getPath('userData'), 'logs');
+      const files = fs.readdirSync(logDir).filter((f) => f.startsWith('main-')).sort().reverse();
+      if (files.length) {
+        const lines = fs.readFileSync(path.join(logDir, files[0]), 'utf8').split(/\r?\n/).filter(Boolean);
+        result.logTail = lines.slice(-40).join('\n');
+      }
+    } catch { /* 无日志时忽略 */ }
+    return result;
   });
 
   /* ---------- 关于 ---------- */

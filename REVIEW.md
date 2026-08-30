@@ -184,3 +184,38 @@ master gain + 媒体元素双通道）、歌词捕获改进（全量 JSON 嗅探
 
 **真机验证建议**：v0.1.9 重新配置 remoteUrl 后应直达音乐页（日志「加载飞牛音乐」含 /music）；
 日志应显示「登录态 Cookie 文件: … bytes @ …Network\Cookies」。
+
+## 审查轮 10：设备枚举 iframe 修复 + 登录态诊断（v0.1.10，三轮审查 A/B/C）
+
+**背景**：用户真机反馈两个新问题——① 音频面板「设备枚举失败：mediaDevices API 不可用」
+（local/remote 两种模式均失败、重启后仍失败）；② 每次打开仍需登录（两个地址都是）。
+
+**根因**：
+1. **枚举只在主 frame 执行**：飞牛门户可能把音乐应用渲染在（跨域）iframe 中（HANDOVER
+   早有记录），主 frame 是门户壳（mediaDevices 不可用/无权限策略），音乐 iframe 才有
+   mediaDevices → 枚举必然失败。安全上下文标记已生效（日志确认），remote 是 https
+   天然安全——排除标记问题；
+2. **登录态**：localStorage 有 auth__remember-me=true（用户勾选记住我）、Cookie 有
+   INTRA_IP 域 token → 本地持久化机制正常；fnos.net 域无 cookie。审查 B 判断最可能
+   根因为**门户签发 session cookie（无过期时间），应用重启即丢**——persist 分区与
+   flush 只能保住持久 cookie；新诊断的 session 标志可自证。
+
+**修复**（5a01196 + 18d5b76）：
+- audio-devices.js listDevices：枚举遍历主 frame + framesInSubtree，任一 frame 成功即返回，
+  全败聚合错误（含各 frame 原因）；
+- guest-mainworld.js 诊断：新增 mediaDevices/secureContext 上报（定位哪个 frame 可用）；
+- ipc.js 诊断：cookie 按域名分组 + cookie 明细（session 标志/过期时间）+
+  localStorage 按 frame 逐域收集（登录态可能落在 iframe 域）；
+- 测试：55 → 57 项（多 frame 回退成功/全败聚合错误）。
+
+**审查发现与处置**（18d5b76）：
+- A P2：ipc.js 诊断 localStorage 收集 mainFrame 无 null 守卫（瞬态窗口下诊断整体 reject）
+  → 补守卫 + frames 为空短路；
+- A P3：补多 frame 枚举测试 2 项；
+- B：确认提交未破坏登录态（flush/userData/分区未动），根因指向门户 session cookie；
+  验证步骤：诊断看 token cookie 的 session 标志；
+- C：通过；P3 枚举错误串过 sanitizeUrl 脱敏（与 logTail 一致）。
+
+**真机验证建议**：v0.1.10 打开音频面板应能枚举设备（iframe 回退）；若仍失败，设置页
+诊断输出各 frame 的 mediaDevices/secureContext。登录态：诊断看 cookieDetail 的 session
+标志——session:true 即门户 session cookie 问题（重启必丢，客户端无法根治）。

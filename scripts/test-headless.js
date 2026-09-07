@@ -289,18 +289,8 @@ console.log('\n[1b] autoLoginSnippet 按钮匹配（审查轮 12：不再误点�
     assert.ok(!code.includes('moTickPending'), '不应有节流延迟（即时响应）');
     assert.ok(code.includes('attributes: true'), 'MutationObserver 应监听全部属性（含 style 切换）');
     assert.ok(code.includes('location.origin'), '子 frame 应有页面侧 origin 校验（审查轮 14）');
-    assert.ok(code.includes('if (!0) {'), '子 frame 应执行 origin 校验');
-    const mainCode = new Function('username', 'password', 'trustedOrigins', 'isMain', m[0] + '\nreturn autoLoginSnippet;')()('u', 'p', [], true);
-    assert.ok(mainCode.includes('if (!1) {'), '主 frame 应跳过页面侧校验（信任由主进程 isMainFrameTrusted 判定）');
-    assert.ok(code.includes('fnos') && code.includes('5ddd') && code.includes('trzznas'), '应信任 FN Connect 官方代理域');
     assert.ok(code.includes('idleTicks'), '应有非登录页闲置清理（审查轮 17 C P2）');
     assert.ok(src.includes('isMainFrameTrusted'), '主进程应有主 frame 信任判定（审查轮 17 C P1）');
-    assert.ok(src.includes('redirectChainOrigins'), '应有导航链可信 origin 集合（审查轮 17 C P1）');
-    assert.ok(src.includes('did-redirect-navigation'), '应记录可信重定向链（FN Connect 302 场景）');
-    // v0.1.15 修复：模板字符串中正则必须用双反斜杠，否则生成脚本 SyntaxError
-    // （生成后的脚本中正则应为单反斜杠形式 \/ 与 \.）
-    assert.ok(code.includes('https:\\/\\/'), '正则 https:// 必须保留反斜杠转义');
-    assert.ok(code.includes('fnos\\.net'), '正则 fnos.net 必须保留反斜杠转义');
   });
 }
 
@@ -354,8 +344,8 @@ console.log('\n[2] settings');
     st3.update({ loginUsername: '', loginPassword: '' });
     assert.strictEqual(st3.getLoginPassword(), '');
   });
-  ok('自动登录凭据：safeStorage 不可用降级 b64 + 跨环境解密失败视为未设置（审查轮 11）', () => {
-    // b64 降级：safeStorage 不可用时仍可加密/解密（混淆存储）
+  ok('自动登录凭据：加密不可用时拒绝保存，解密失败视为未设置', () => {
+    // 加密不可用时保持原设置和磁盘内容不变。
     const stubNoSafe = electronStub();
     stubNoSafe.safeStorage = {
       isEncryptionAvailable: () => false,
@@ -364,9 +354,11 @@ console.log('\n[2] settings');
     };
     const stB64 = loadWithStub(path.join(ROOT, 'src/main/settings.js'), stubNoSafe);
     stB64.load();
-    stB64.update({ loginUsername: 'b64-user', loginPassword: 'pw-7ch' });
-    assert.strictEqual(stB64.getLoginPassword(), 'pw-7ch', 'b64 降级应可回读');
-    assert.strictEqual(stB64.getAll().loginPasswordSet, true);
+    const before = fs.readFileSync(path.join(tmpUserData, 'settings.json'), 'utf8');
+    assert.throws(() => stB64.update({ loginUsername: 'b64-user', loginPassword: 'pw-7ch' }));
+    assert.strictEqual(fs.readFileSync(path.join(tmpUserData, 'settings.json'), 'utf8'), before);
+    assert.strictEqual(stB64.getLoginPassword(), '');
+    assert.strictEqual(stB64.getAll().loginPasswordSet, false);
     // 跨环境：密文存在但解密失败（DPAPI 密钥不匹配模拟）→ loginPasswordSet=false
     const stubBroken = electronStub();
     stubBroken.safeStorage = {
@@ -426,6 +418,25 @@ console.log('\n[4] ipc 处理器');
   const ipc = loadWithStub(path.join(ROOT, 'src/main/ipc.js'), stub);
   ipc.register({ guestSession: fakeSession });
   const H = stub._ipcHandlers;
+
+  ok('settings:save reports encryption failure without changing settings', async () => {
+    const original = stub.safeStorage;
+    const available = original.isEncryptionAvailable;
+    const before = settingsMod.getAll();
+    const disk = fs.readFileSync(path.join(tmpUserData, 'settings.json'), 'utf8');
+    try {
+      original.isEncryptionAvailable = () => true;
+      const encrypt = original.encryptString;
+      try {
+        original.encryptString = () => { throw new Error('unavailable'); };
+        const result = await H['settings:save'](shellEvent, { loginUsername: 'changed', loginPassword: 'pw-7ch' });
+        assert.strictEqual(result.ok, false);
+        assert.ok(result.error);
+        assert.deepStrictEqual(settingsMod.getAll(), before);
+        assert.strictEqual(fs.readFileSync(path.join(tmpUserData, 'settings.json'), 'utf8'), disk);
+      } finally { original.encryptString = encrypt; }
+    } finally { original.isEncryptionAvailable = available; }
+  });
 
   ok('settings:get 拒绝不可信发送者', async () => {
     assert.strictEqual(await H['settings:get'](evilEvent), null);
@@ -647,6 +658,66 @@ console.log('\n[9] guest-mainworld 浏览器入口（注入脚本关键路径）
 }
 
 /* ---------------- 汇总 ---------------- */
+ok('review: URL redaction preserves diagnostic text', () => {
+  const su = loadWithStub(path.join(ROOT, 'src/main/server-url.js'), electronStub());
+  const fixture = new URL('https://example.com/music?password=demo&refresh_token=demo#secret');
+  fixture.username = 'user';
+  fixture.password = 'demo';
+  assert.strictEqual(su.sanitizeUrl(fixture.href), 'https://example.com/music');
+  const prefix = '[2026-09-07T12:00:00Z] [INFO] loaded ';
+  assert.strictEqual(su.sanitizeLogLine(prefix + 'https://example.com/music?custom_secret=demo next'), prefix + 'https://example.com/music next');
+  assert.strictEqual(su.sanitizeLogLine(prefix + 'ready'), prefix + 'ready');
+});
+
+ok('review: auto-login rejects other tenants and unconfigured redirect targets', () => {
+  const vm = require('vm');
+  const src = fs.readFileSync(path.join(ROOT, 'src/main/window-manager.js'), 'utf8');
+  const match = src.match(/function autoLoginSnippet\(username, password, trustedOrigins, isMain\) \{[\s\S]*?\n  \}/);
+  const snippet = new Function(match[0] + '\nreturn autoLoginSnippet;')();
+  const trusted = ['https://my-nas.' + 'fnos.net'];
+  const security = loadWithStub(path.join(ROOT, 'src/main/security.js'), electronStub());
+  const predicate = src.match(/function isMainFrameTrusted\(url\) \{[\s\S]*?\n  \}/)[0];
+  const allowed = new Function('security', 'settings', predicate + '\nreturn isMainFrameTrusted;')(security, { getAll: () => ({ remoteUrl: trusted[0] }) });
+  for (const origin of [trusted[0], 'https://other-nas.' + 'fnos.net', 'http://127.0.0.1:5666']) {
+    assert.strictEqual(allowed(origin), origin === trusted[0]);
+    for (const isMain of [true, false]) {
+      let queried = 0;
+      vm.runInNewContext(snippet('test-user', 'test-password', trusted, isMain), {
+        window: {}, location: { origin },
+        document: { querySelectorAll() { queried++; return []; } },
+        setInterval() { return 1; }, clearInterval() {}, clearTimeout() {},
+      });
+      assert.strictEqual(queried > 0, origin === trusted[0]);
+    }
+  }
+});
+
+ok('review: device switching restores playback and survives errors', async () => {
+  const vm = require('vm');
+  for (const initial of ['running', 'suspended']) {
+    class AudioContext {
+      constructor() { this.state = initial; this.sinkId = ''; }
+      suspend() { this.state = 'suspended'; return Promise.resolve(); }
+      resume() { this.state = 'running'; return Promise.resolve(); }
+      setSinkId(id) {
+        if (id === 'broken') throw new Error('device unavailable');
+        this.sinkId = id;
+        return Promise.resolve();
+      }
+    }
+    const sandbox = { window: { AudioContext, addEventListener() {} }, document: { querySelectorAll() { return []; } }, navigator: {}, setTimeout() {} };
+    vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'src/main/guest-mainworld.js'), 'utf8'), sandbox);
+    const ctx = new sandbox.window.AudioContext();
+    sandbox.window.__fnmusicSetSinkNow('first');
+    await Promise.resolve(); // First switch is now suspended and awaiting completion.
+    sandbox.window.__fnmusicSetSinkNow('broken');
+    sandbox.window.__fnmusicSetSinkNow('last');
+    await ctx.__fnSinkQueue;
+    assert.strictEqual(ctx.sinkId, 'last');
+    assert.strictEqual(ctx.state, initial);
+  }
+});
+
 (async () => {
   for (const { name, fn } of testQueue) {
     try {

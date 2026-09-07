@@ -100,15 +100,15 @@ function sanitize(key, value) {
   return def;
 }
 
-/** 密码加密（safeStorage/DPAPI；不可用时降级 base64 混淆——仍非明文落盘） */
+/** 密码加密（safeStorage/DPAPI；不可用时拒绝保存） */
 function encryptPassword(plain) {
   if (!plain) return '';
   try {
     if (safeStorage.isEncryptionAvailable()) {
       return 'enc:' + safeStorage.encryptString(String(plain)).toString('base64');
     }
-  } catch { /* 降级 */ }
-  return 'b64:' + Buffer.from(String(plain), 'utf8').toString('base64');
+  } catch { /* 返回统一错误，不暴露底层错误详情 */ }
+  throw new Error('系统安全存储不可用，未保存设置。请恢复安全存储后重试，或清空密码以停用自动登录。');
 }
 
 /** 密码解密（与 encryptPassword 对应） */
@@ -122,7 +122,7 @@ function decryptPassword(stored) {
       return ''; // 加密不可用则无法解密（跨机器/环境），视为未设置
     }
     if (stored.startsWith('b64:')) {
-      return Buffer.from(stored.slice(4), 'base64').toString('utf8');
+      return ''; // Legacy unencrypted passwords must be entered again.
     }
   } catch { /* 解密失败视为未设置 */ }
   return '';

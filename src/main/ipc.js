@@ -183,7 +183,9 @@ function register(ctx) {
     }
 
     const prev = settings.getAll();
-    const next = settings.update(p);
+    let next;
+    try { next = settings.update(p); }
+    catch (e) { return { ok: false, error: e.message, settings: settings.getAll() }; }
     // 硬件加速变更需要重启才生效（返回给渲染层提示）
     const needsRestart = 'hardwareAcceleration' in p && p.hardwareAcceleration !== prev.hardwareAcceleration;
 
@@ -334,7 +336,7 @@ function register(ctx) {
           const lines = fs.readFileSync(path.join(logDir, files[0]), 'utf8').split(/\r?\n/).filter(Boolean);
           result.logTail = lines
             .slice(-40)
-            .map((l) => serverUrl.sanitizeUrl(l))
+            .map((l) => serverUrl.sanitizeLogLine(l))
             .join('\n');
         }
       }

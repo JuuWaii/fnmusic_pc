@@ -183,7 +183,7 @@ if (typeof window !== 'undefined') {
      * - Chromium 对「正在播放」的 AudioContext 直接 setSinkId 返回成功但输出流不重建，
      *   需 suspend → setSinkId → resume 强制重路由（毫秒级中断）；
      * - 所有调用路径包 try/catch，异常保证恢复播放（不留下永久暂停的静音上下文）；
-     * - epoch 串行化：快速连续切换时只有最新一次生效；
+     * - 队列串行化：每次恢复播放后再执行下一次切换，最终应用最后一次设备；
      * - closed 上下文从登记表移除，防内存增长；
      * - suspended 上下文用幂等 suspend→setSinkId 并保持 suspended。
      */
@@ -197,87 +197,25 @@ if (typeof window !== 'undefined') {
         if (i >= 0) liveContexts.splice(i, 1);
         return;
       }
-      const epoch = (ctx.__fnSinkEpoch = (ctx.__fnSinkEpoch || 0) + 1);
-
-      const doSwitch = (method) => {
-        let p = null;
+      // Queue per context; restore playback before starting the next switch.
+      const target = sinkId;
+      const switchDevice = async () => {
+        if (ctx.state === 'closed') return;
+        const wasRunning = ctx.state === 'running';
         try {
-          p = ctx.setSinkId(sinkId);
+          if (wasRunning && typeof ctx.suspend === 'function') await ctx.suspend();
+          await ctx.setSinkId(target);
+          diagPush('audio-context', true, 'sink=' + target);
         } catch (err) {
-          diagPush('audio-context', false, 'sync error: ' + (err && err.message || err) + ' method=' + method);
-          return null;
-        }
-        return Promise.resolve(p).then(
-          () => {
-            const applied = ctx.sinkId === sinkId;
-            diagPush('audio-context', true, 'sink=' + sinkId + ' method=' + method + ' applied=' + applied + ' state=' + ctx.state);
-            if (!applied) {
-              // 假成功：再试一次（部分 Chromium 版本第二次调用生效）
-              try {
-                return Promise.resolve(ctx.setSinkId(sinkId)).then(
-                  () => diagPush('audio-context', true, 'retry sink=' + sinkId + ' method=' + method),
-                  (err) => diagPush('audio-context', false, 'retry failed: ' + (err && err.message || err))
-                );
-              } catch (err) {
-                diagPush('audio-context', false, 'retry sync error: ' + (err && err.message || err));
-              }
-            }
-            return null;
-          },
-          (err) => {
-            diagPush('audio-context', false, (err && err.message || err) + ' method=' + method);
-            return null;
+          diagPush('audio-context', false, err && err.message || err);
+        } finally {
+          if (wasRunning && ctx.state !== 'closed' && typeof ctx.resume === 'function') {
+            try { await ctx.resume(); }
+            catch (err) { diagPush('audio-context', false, 'resume failed: ' + (err && err.message || err)); }
           }
-        );
-      };
-
-      const switchAndResume = () => {
-        if (ctx.__fnSinkEpoch !== epoch) return Promise.resolve();
-        const switching = doSwitch('suspend-resume');
-        if (!switching) return Promise.resolve(ctx.resume ? ctx.resume().catch(() => {}) : null);
-        return switching.then(() => {
-          if (ctx.state !== 'closed' && typeof ctx.resume === 'function') {
-            return ctx.resume().catch((err) => diagPush('audio-context', false, 'resume failed: ' + (err && err.message || err)));
-          }
-          return null;
-        });
-      };
-
-      if (ctx.state === 'running' && typeof ctx.suspend === 'function') {
-        let suspended = false;
-        ctx.suspend()
-          .then(() => { suspended = true; })
-          .catch((err) => {
-            diagPush('audio-context', false, 'suspend failed, direct switch: ' + (err && err.message || err));
-            suspended = false;
-          })
-          .then(() => {
-            if (suspended && ctx.__fnSinkEpoch === epoch) {
-              return switchAndResume();
-            }
-            if (ctx.__fnSinkEpoch === epoch) {
-              const p = doSwitch('direct');
-              if (p) p.catch(() => {});
-            }
-            return null;
-          })
-          .catch((err) => diagPush('audio-context', false, 'switch chain error: ' + (err && err.message || err)));
-      } else if (ctx.state === 'suspended') {
-        if (typeof ctx.suspend === 'function') {
-          ctx.suspend().catch(() => {}).then(() => {
-            if (ctx.__fnSinkEpoch === epoch) {
-              const p = doSwitch('suspended');
-              if (p) p.catch(() => {});
-            }
-          });
-        } else {
-          const p = doSwitch('suspended-direct');
-          if (p) p.catch(() => {});
         }
-      } else {
-        const p = doSwitch('direct');
-        if (p) p.catch(() => {});
-      }
+      };
+      ctx.__fnSinkQueue = (ctx.__fnSinkQueue || Promise.resolve()).then(switchDevice, switchDevice);
     }
 
     /** 对已创建的 AudioContext 重定向（设备切换） */

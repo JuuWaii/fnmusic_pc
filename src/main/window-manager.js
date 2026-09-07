@@ -49,11 +49,7 @@ let reloadTimer = null;         // 渲染进程崩溃后的延迟重载
 let firstContentResolvers = []; // --smoke-test 用
 let firstContentDone = false;
 const pageLoadedCallbacks = []; // 页面加载完成回调（设置回放）
-/** 导航链可信 origin 集合（审查轮 17 C P1）：由 did-redirect-navigation 累积——
- * 仅当重定向「来源」属于已配置 origin ∪ FN 官方域 时记录目标 origin。
- * 用于主 frame 自动登录信任判定（FN Connect 302→内网 NAS 合法场景），
- * 防止用户点击导航到外站后凭据被自动填入。 */
-const redirectChainOrigins = new Set();
+
 
 /** 读取主世界注入脚本 */
 function getMainWorldScript() {
@@ -207,24 +203,6 @@ function createGuestView() {
     if (!/^https?:/.test(url)) e.preventDefault();
   });
 
-  // 审查轮 17 C P1：记录「从可信源重定向到达」的 origin 到导航链集合——
-  // FN Connect 域名 302 到内网 NAS 属合法重定向链；用户点击链接导航（非
-  // 重定向）不会进入该集合，外站登录表单不会被自动填入凭据。
-  wc.on('did-redirect-navigation', (_e, url) => {
-    try {
-      const from = new URL(wc.getURL()).origin; // 重定向前（当前已提交）页面
-      const to = new URL(url).origin;
-      const trusted = serverUrl.trustedOrigins(settings.getAll());
-      const fromTrusted = trusted.includes(from)
-        || /^(?:[a-z0-9-]+\.)*(?:fnos\.net|5ddd\.com|trzznas\.com)$/i.test(new URL(from).host)
-        || redirectChainOrigins.has(from);
-      if (fromTrusted && from !== to) {
-        redirectChainOrigins.add(to);
-        logger.info('记录导航链可信 origin:', serverUrl.sanitizeUrl(url));
-      }
-    } catch { /* 忽略非法 URL */ }
-  });
-
   // 主世界注入（AudioContext 定向 / 音量控制）
   // 注：飞牛门户可能把应用渲染在（跨域）iframe 中，因此向主 frame 与全部子 frame 注入，
   // 并通过 frame-created 覆盖运行时动态创建的 iframe。
@@ -272,38 +250,20 @@ function createGuestView() {
     for (const frame of frames) injectIntoFrame(frame);
   }
 
-  /**
-   * 自动登录填写脚本（注入到页面主世界执行）。
-   *
-   * v0.1.17 修复：页面侧 origin 校验仅对子 frame 严格——
-   * 主 frame 是用户配置地址（serverUrl/remoteUrl）的导航结果，FN Connect
-   * 302 到内网 NAS 属正常导航链，origin 变化不应拦截（v0.1.14 修复后被
-   * 页面侧校验又挡回，用户只配置 remoteUrl 时内网登录页无法自动填写）。
-   * - 主 frame：isMain=true → 跳过页面侧校验（主进程已信任）；
-   * - 子 frame：isMain=false → 校验 location.origin ∈ 已配置 origins ∪
-   *   FN Connect 官方代理域（防跨域 iframe 被填凭据）。
-   * 循环检测：150ms 轮询 + MutationObserver（childList/subtree/attributes
-   * 全监听，含 style 切换）；检测到可见密码框 → 立即填表登录一次 → 清理。
-   */
+  /** Recheck configured origins at execution time, including the main frame. */
   function autoLoginSnippet(username, password, trustedOrigins, isMain) {
     const creds = JSON.stringify({ username: String(username || ''), password: String(password || '') });
     const origins = JSON.stringify(Array.isArray(trustedOrigins) ? trustedOrigins : []);
-    const mainFrame = isMain ? 1 : 0;
     return `(() => {
       if (window.__fnmusicAutoLogin) return;
       window.__fnmusicAutoLogin = true;
       let creds = null, origins = null;
       try { creds = ${creds}; origins = ${origins}; } catch (e) { return; }
       if (!creds || !creds.username || !creds.password) return;
-      // 审查轮 14 C P2 + v0.1.17：子 frame 才做页面侧 origin 校验。
-      // 主 frame（mainFrame=1）信任导航链（用户配置地址 302 到内网属正常）。
-      // 注：模板字符串中正则须用双反斜杠（\\\\/ 与 \\\\.），否则经字符串字面量
-      // 解析后反斜杠丢失导致 SyntaxError（v0.1.14 失效根因）。
-      if (!${mainFrame}) {
+      {
         try {
           const cur = location.origin;
-          const ok = origins.some((o) => o === cur)
-            || /^https:\\/\\/(?:[a-z0-9-]+\\.)*(?:fnos\\.net|5ddd\\.com|trzznas\\.com)$/i.test(location.host);
+          const ok = origins.includes(cur);
           if (!ok) return;
         } catch (e) { return; }
       }
@@ -392,16 +352,7 @@ function createGuestView() {
     })()`;
   }
 
-  /** 向全部 frame 注入自动登录脚本（凭据来自设置，主进程直取明文）
-   * 审查轮 11 C P2 + 审查轮 14 + 审查轮 17 C P1：
-   * - 主 frame：仅当「当前页面 origin ∈ 已配置 origins ∪ FN Connect 官方代理域
-   *   ∪ 导航链可信 origin（从可信源 did-redirect-navigation 重定向到达）」才注入
-   *   ——既保留 FN Connect 302→内网 NAS 合法场景，又封住「用户点击导航到外站
-   *   钓鱼登录表单」的凭据泄露面（不再无条件信任主 frame）；
-   * - 子 frame：主进程 isTrustedOrigin 过滤 + 页面侧校验——跨域 iframe
-   *   （广告/第三方嵌入）不得填入凭据。
-   * 导航链集合在 createGuestView 内维护（redirectChainOrigins），
-   * 由 did-redirect-navigation 事件累积。 */
+  /** Credentials are only injected into explicitly configured origins. */
   function injectAutoLoginIntoFrames() {
     const s = settings.getAll();
     if (!s.loginUsername || !s.loginPasswordSet) return;
@@ -417,39 +368,17 @@ function createGuestView() {
     } catch { /* 忽略 */ }
     for (const frame of frames) {
       const isMain = wc.mainFrame && frame === wc.mainFrame;
-      // 子 frame 主进程过滤（主 frame 也需通过导航链信任判定，见下）
-      if (!isMain && !security.isTrustedOrigin(() => settings.getAll(), frame.url || '')) continue;
-      if (isMain) {
-        // 主 frame：origin 必须在 已配置 ∪ FN 官方域 ∪ 导航链可信集合
-        const ok = isMainFrameTrusted(frame.url || '');
-        if (!ok) continue;
-      }
-      // 主 frame 传入的 origins 需包含导航链可信 origin（FN Connect 302 → 内网
-      // 后页面 origin 不在已配置列表，但属于合法导航链——审查轮 17 C P1）
-      const trustedAll = isMain
-        ? Array.from(new Set([...trusted, ...redirectChainOrigins]))
-        : trusted;
-      const script = autoLoginSnippet(s.loginUsername, settings.getLoginPassword(), trustedAll, isMain);
+      if (!isMainFrameTrusted(frame.url || '')) continue;
+      const script = autoLoginSnippet(s.loginUsername, settings.getLoginPassword(), trusted, isMain);
       try {
         frame.executeJavaScript(script, true).catch(() => {});
       } catch { /* frame 已销毁等，忽略 */ }
     }
   }
 
-  /** 主 frame 信任判定（审查轮 17 C P1）：origin ∈ 已配置 ∪ FN 官方域 ∪ 重定向链 */
+  /** Shared domain suffixes and redirects do not grant credential access. */
   function isMainFrameTrusted(url) {
-    try {
-      const origin = new URL(url).origin;
-      const trusted = serverUrl.trustedOrigins(settings.getAll());
-      if (trusted.includes(origin)) return true;
-      if (redirectChainOrigins.has(origin)) return true;
-      // FN Connect 官方代理域（含子域）
-      try {
-        const host = new URL(url).host;
-        if (/^(?:[a-z0-9-]+\.)*(?:fnos\.net|5ddd\.com|trzznas\.com)$/i.test(host)) return true;
-      } catch { /* 忽略 */ }
-      return false;
-    } catch { return false; }
+    return security.isTrustedOrigin(() => settings.getAll(), url);
   }
 
   /** 向单个 frame 注入主世界脚本，并回放当前音频输出设备 */

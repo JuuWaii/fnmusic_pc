@@ -149,10 +149,9 @@ function sanitizeUrl(raw) {
   try {
     const u = new URL(raw);
     // 抹掉常见凭据形参（保留其他 query 的业务含义有限，一并清除更安全）
-    const clean = u.search
-      ? u.search.replace(/([?&](?:token|access_token|session|sid|sign|auth|key|secret)=)[^&]*/gi, '$1***')
-      : '';
-    u.search = clean;
+    u.username = '';
+    u.password = '';
+    u.search = '';
     u.hash = '';
     return u.toString().replace(/\/$/, '');
   } catch {
@@ -160,4 +159,8 @@ function sanitizeUrl(raw) {
   }
 }
 
-module.exports = { validateUrl, applyMusicPath, resolve, isConfigured, trustedOrigins, displayHost, sanitizeUrl };
+function sanitizeLogLine(line) {
+  return String(line).replace(new RegExp('https?://[^\\s<>"\']+', 'gi'), (url) => sanitizeUrl(url));
+}
+
+module.exports = { sanitizeLogLine, validateUrl, applyMusicPath, resolve, isConfigured, trustedOrigins, displayHost, sanitizeUrl };

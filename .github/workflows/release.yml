@@ -1,0 +1,44 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify tag matches package version
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag does not match package version' }
+      - run: npm ci
+      - run: npm test
+      - run: npm run check:privacy
+      - name: Build Windows installer and portable app
+        run: npm run dist -- --publish never
+      - name: Publish release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $assets = @("dist/FNMusicPC Setup $version.exe", "dist/FNMusicPC $version.exe")
+          $checksums = foreach ($asset in $assets) {
+            $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $(Split-Path -Leaf $asset)"
+          }
+          $checksums | Set-Content -Encoding utf8 dist/SHA256SUMS.txt
+          gh release create $env:GITHUB_REF_NAME @assets dist/SHA256SUMS.txt --verify-tag --title "FN Music PC $env:GITHUB_REF_NAME" --notes-file "docs/releases/$env:GITHUB_REF_NAME.md" --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publishing failed' }

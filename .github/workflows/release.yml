@@ -2,8 +2,11 @@ name: Windows release
 
 on:
   push:
+    branches:
+      - 'release/**'
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,7 +25,13 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content package.json | ConvertFrom-Json).version
-          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag does not match package version' }
+          $tag = "v$version"
+          if ($env:GITHUB_EVENT_NAME -ne 'workflow_dispatch' -and $env:GITHUB_REF_NAME -notin @($tag, "release/$tag")) { throw 'Release ref does not match package version' }
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          git fetch origin "refs/tags/${tag}:refs/tags/${tag}"
+          if ($LASTEXITCODE -ne 0) { throw 'Release tag is missing' }
+          git checkout --detach $tag
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot check out release tag' }
       - run: npm ci
       - run: npm test
       - run: npm run check:privacy
@@ -40,5 +49,5 @@ jobs:
             "$hash  $(Split-Path -Leaf $asset)"
           }
           $checksums | Set-Content -Encoding utf8 dist/SHA256SUMS.txt
-          gh release create $env:GITHUB_REF_NAME @assets dist/SHA256SUMS.txt --verify-tag --title "FN Music PC $env:GITHUB_REF_NAME" --notes-file "docs/releases/$env:GITHUB_REF_NAME.md" --latest
+          gh release create $env:RELEASE_TAG @assets dist/SHA256SUMS.txt --verify-tag --title "FN Music PC $env:RELEASE_TAG" --notes-file "docs/releases/$env:RELEASE_TAG.md" --latest
           if ($LASTEXITCODE -ne 0) { throw 'Release publishing failed' }

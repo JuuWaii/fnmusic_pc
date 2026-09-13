@@ -69,6 +69,7 @@
     <StackPanel Orientation="Horizontal" Spacing="8">
      <Button Content="上一首" Click="PreviousTrack_Click"/>
      <Button Content="下一首" Click="NextTrack_Click"/>
+     <Button Content="管理队列" Click="ManageQueue_Click"/>
      <ComboBox x:Name="QueueModePicker" Header="播放模式" SelectedIndex="0" SelectionChanged="QueueMode_Changed">
       <ComboBoxItem Content="顺序播放"/><ComboBoxItem Content="列表循环"/><ComboBoxItem Content="单曲循环"/><ComboBoxItem Content="随机播放"/>
      </ComboBox>

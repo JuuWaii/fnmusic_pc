@@ -32,3 +32,6 @@ Thumbs.db
 
 # 临时调试脚本
 scripts/tmp-*
+
+# 本机旧版归档（不发布）
+.legacy-archive/

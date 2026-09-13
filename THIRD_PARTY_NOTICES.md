@@ -90,3 +90,5 @@ SOFTWARE.
 ## FFmpeg（原生播放预览的外部依赖）
 
 FFmpeg 项目：https://ffmpeg.org/ 。其许可取决于具体构建选项，主体采用 LGPL，启用 GPL 组件的构建另受 GPL 约束，不能套用上面的 MIT 条款。当前仅调用开发环境已有的外部可执行程序，仓库和预览包尚未捆绑 FFmpeg。发布前必须固定构建版本、审核配置并提供对应许可和源码材料；详见 [播放层说明](docs/FFMPEG_PLAYBACK.md) 和 [FFmpeg 官方许可说明](https://ffmpeg.org/legal.html)。
+
+说明（2026-09-13）：Electron 与 electron-builder 已退出活动依赖，以下相关条目作为历史归属保留。

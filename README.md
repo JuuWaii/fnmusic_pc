@@ -1,163 +1,33 @@
-# FN Music PC（fnmusic_pc）
+# 飞牛音乐 Windows 原生客户端
 
-> 飞牛音乐（fnOS Music）网页的 PC 客户端封装 —— 网页嵌套播放，登录态保持，支持 FN Connect 远程访问与音频输出设备选择。
+使用 C#、WinUI 3/XAML 和 FFmpeg 构建的非官方 NAS 音乐客户端，目前处于阶段 4 开发预览。
 
-飞牛音乐是飞牛 fnOS（飞牛私有云）内置的音乐应用。本客户端将其网页版（通常运行在 NAS 的 **5666** 端口）
-以原生窗口形式嵌入 PC，让你像使用本地音乐软件一样听歌。
+已实现原生登录与加密会话恢复、分页曲库、播放/暂停/停止、进度拖动、音量与输出设备、双击切歌、当前页队列和四种播放模式。队列管理支持查看、播放所选、移除和清空；移除当前曲目或清空队列会停止播放。
 
-## ✨ 功能特性
+## 构建与运行
 
-| 需求 | 实现 |
-| --- | --- |
-| 登录态保持 | 网页会话（Cookie / LocalStorage）持久化在用户数据目录，**重启免登录** |
-| FN Connect 外网访问 | 设置中可配置官方远程访问地址，支持「自动：本地优先，失败切远程」 |
-| 欢迎页配置 | 首次启动显示欢迎配置页，服务器地址可随时在设置中修改 |
-| 音频输出设备 | 应用内下拉自由选择音频输出设备，立即生效 |
-| 零侵入网页 | 不修改飞牛网页任何文件，网页升级后客户端依旧可用 |
-| 隐私 | 不收集任何数据；仓库不含任何个人信息（内网地址 / Cookie / Token） |
-
-## 📦 快速开始
-
-```bash
-# 1. 安装依赖（国内网络如遇 Electron 下载失败，见下方「镜像加速」）
-npm install
-
-# 2. 启动
-npm start
+```powershell
+./scripts/native.ps1 bootstrap
+./scripts/native.ps1 build
+./scripts/native.ps1 test
+./scripts/native.ps1 run
 ```
 
-> PowerShell 5.1 不支持 `&&` 连接符，请分行执行：先 `npm install`，再 `npm start`。
+本机已有匹配 SDK 时可跳过 bootstrap。播放需要 PATH 中存在 FFmpeg；当前尚未捆绑可分发版本，也不是最终安装包。
 
-首次启动会显示欢迎页：填写你的飞牛门户地址（例如 `http://192.168.x.x:5666`）与
-FN Connect 远程地址（可选），点击「保存并开始使用」。
+[原生工程说明](native/README.md) · [阶段进度](docs/PHASE_STATUS.md) · [开发清单](docs/NATIVE_BACKLOG.md) · [FFmpeg 播放层](docs/FFMPEG_PLAYBACK.md)
 
-> 飞牛音乐的实际网页入口为「门户根地址 + /music」：客户端会自动在服务器地址后追加
-> 音乐入口路径（默认 `/music`，可在设置中修改或留空），因此只需填写门户地址即可直接进入飞牛音乐。
+搜索、专辑/歌手、收藏和歌单、FN Connect、OAuth、桌面集成及发布验收仍待后续。
 
-> 镜像加速（可选）：
->
-> ```bash
-> $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"; npm install
-> # 或使用仓库自带脚本：node scripts/electron-download.js
-> ```
+## Electron 归档
 
-## 🔐 登录态与隐私说明
+旧客户端已从活动源码和构建入口移除，归档位置及恢复说明见 [清理记录](docs/ELECTRON_ARCHIVE.md)。原生配置位于 `%LOCALAPPDATA%/FnMusic.Native/`；旧应用用户数据未删除。
 
-- 登录信息（Cookie 等）由 Chromium 会话持久化在系统用户数据目录
-  （`%APPDATA%/FNMusicPC`），**仅保存在本机**，应用不读取、不上传、不备份；
-- 设置中提供「清除登录数据」按钮（Cookie / 缓存 / LocalStorage）；
-- 本客户端不收集任何统计、埋点或日志上报；
-- 仓库代码中**不含**任何真实内网地址、远程域名、Cookie 或 Token；
-  开发期个人地址通过 `dev.config.json`（已被 .gitignore 排除）提供，
-  模板见 `dev.config.json.example`。可随时运行 `npm run check:privacy` 复核。
+辅助检查无需安装 npm 依赖：
 
-## 🛰 FN Connect 远程访问
-
-FN Connect 是飞牛官方提供的远程访问服务，用于没有公网 IP 的场景下从外网访问 NAS。
-开启后，在飞牛系统「FN Connect」页面可以获取到形如 `https://xxxx.fnos.net` 的
-**网页访问地址**（官方代理域名后缀包括 `fnos.net`、`5ddd.com`、`trzznas.com`）。
-
-- 在设置 → 服务器 → 「FN Connect 远程地址」填入该地址；
-- 访问模式选「自动」：客户端优先连接本地地址，失败时自动切换到远程地址；
-- 若远程地址证书异常（个别网络环境），可临时开启「忽略证书错误」（高级设置）。
-
-> 官方文档：[如何远程访问到飞牛 NAS？](https://help.fnnas.com/articles/v1/access/how-access)
-
-## 🔊 音频输出设备与音量
-
-- 工具栏 🔊 按钮打开**独立音频调节面板**：设备下拉（选择即生效，无需保存）+ 音量滑块（实时生效）；
-- 音量作用于飞牛音乐网页播放器输出（WebAudio 主增益 + 媒体元素），与网页播放音量联动；
-- 设置页「音频输出设备」入口保留，功能相同；
-- 原理：客户端在网页运行时注入 `setSinkId`（设备）与 master gain（音量），不修改网页源码；
-- 若列表为空：请确认已进入飞牛音乐页面后再刷新（设备枚举依赖页面环境）。
-- 纯 HTTP 的内网地址在 Chromium 中属于非安全上下文，客户端启动时会自动将你配置的
-  服务器地址标记为安全上下文以启用设备枚举；**更换服务器地址后需重启客户端生效**。
-
-## 🖥 显示兼容性
-
-- 默认启用硬件加速（设置/欢迎页可关闭，需重启生效）：部分显卡/驱动/远程桌面环境下 Chromium GPU 合成会失败，
-  表现为窗口全黑、启动不弹窗；软件渲染对音乐播放场景足够流畅且兼容性最好；
-- 若仍遇到显示异常，请检查显卡驱动，或从托盘「退出」后重新启动；
-- 黑屏无法操作 UI 时可用命令行逃生口启动：`FNMusicPC.exe --disable-gpu`（强制软件渲染）
-  或 `--hardware-acceleration`（强制开启硬件加速）。
-
-
-## 🔔 后台运行（系统托盘）
-
-- 点击主窗口关闭按钮（X）默认**最小化到系统托盘**，音乐在后台继续播放（可在
-  设置 → 高级 中关闭该行为）；
-  右键菜单：显示、设置、退出；
-- 托盘「退出」才会真正结束应用；
-- 若重复启动发现"打不开"，多半是旧实例仍在后台运行——请从托盘菜单恢复窗口，
-  或在任务管理器中结束 `FNMusicPC.exe` 进程。
-
-## 🔐 自动登录（可选）
-
-- 设置/欢迎页可配置**飞牛音乐应用账号密码**（非 NAS 系统账号）；
-- 登录页出现时客户端自动填写并提交（仅一次）；密码经系统安全存储（DPAPI）
-  加密保存在本机，不写日志、不上传；
-- 自动填写仅对**已配置服务器地址的来源（协议、主机、端口）**生效。
-  FN Connect 若跳转到另一来源，需将实际 NAS 地址也填入本地服务器设置；
-  域名后缀相同或经过重定向不会自动获得凭据访问权限。
-- 系统安全存储不可用时拒绝保存密码；旧版 Base64 密码不再用于自动登录，需重新输入并加密保存。
-- **安全提示**：请勿在应用内访问不信任的网页（含登录表单的页面可能被自动填写）；
-  如需停用，在设置页清空账号即可一并清除密码。
-
-
-
-## 🗑 已移除功能
-
-- **桌面歌词**：多次尝试（接口嗅探/WebSocket/DOM 捕获）均未能稳定获取飞牛音乐歌词数据，
-  已按用户要求于 v0.1.6 移除，保持客户端精简。
-
-## 🧱 技术架构
-
-详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
-
-```text
-src/
-├── main/                 # 主进程
-│   ├── main.js           # 入口：生命周期、单实例、冒烟测试
-│   ├── window-manager.js # 壳窗口 + WebContentsView（网页承载）
-│   ├── guest-preload.js  # 注入网页的隔离世界脚本（音频设备/进度上报/消息桥，零侵入）
-│   ├── guest-mainworld.js # 注入网页主世界的脚本（AudioContext 定向 / 音量控制）
-│   ├── settings.js       # 设置持久化（userData/settings.json）
-│   ├── server-url.js     # 地址校验与解析（本地 / FN Connect）
-│   ├── audio-devices.js  # 音频输出设备枚举与切换
-│   ├── security.js       # 权限 / 证书 / 新窗口策略
-│   └── ipc.js            # IPC 总线
-├── renderer/             # 壳页面（本地页面，非网页）
-│   ├── toolbar.*         # 顶栏（导航 / 设备 / 设置）
-│   ├── welcome.*         # 欢迎配置页
-│   ├── settings.*        # 设置页
-│   └── audio-panel.*     # 音频调节面板（设备 / 音量）
-└── preload.js            # contextBridge 白名单桥
+```powershell
+node --test tests/*.test.cjs
+node scripts/check-privacy.js
 ```
 
-## 🧪 开发与验证
-
-```bash
-npm start              # 启动应用
-npm run smoke          # 冒烟测试（自动加载并自检后退出）
-npm run check:privacy  # 隐私合规检查（IP / 凭据 / 个人配置）
-npm run pack           # 打包（目录形式，快速验证）
-npm run dist           # 打包（NSIS 安装包）
-```
-
-## 🙏 参照的开源项目（致谢）
-
-本项目的架构与交互设计参考了以下优秀开源项目（均为 MIT License，详情与许可全文见
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)）：
-
-- [Electron](https://github.com/electron/electron) —— 桌面应用框架
-- [electron-builder](https://github.com/electron-userland/electron-builder) —— 打包工具
-- [Listen1](https://github.com/listen1/listen1_chrome_extension) —— 多平台音乐聚合播放器（网页封装思路）
-- [YesPlayMusic](https://github.com/qier222/YesPlayMusic) —— 高颜值第三方音乐播放器（界面交互参考）
-- [MusicBox](https://github.com/musicbox/musicbox) —— 终端音乐播放器（桌面歌词展示思路）
-
-> 飞牛（fnOS / FN Music / FN Connect）为飞牛科技（fnOS）的产品与服务。
-> 本客户端为第三方开发的非官方封装，与飞牛官方无任何关联或背书；相关商标归其各自所有者。
-
-## 📄 License
-
-[MIT](LICENSE) © fnmusic-pc contributors
+本项目与飞牛官方无关联或背书。许可见 [LICENSE](LICENSE)，依赖及参考归属见 [第三方声明](THIRD_PARTY_NOTICES.md)。

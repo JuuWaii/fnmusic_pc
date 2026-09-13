@@ -1,6 +1,6 @@
 # 飞牛音乐 WinUI 3 原生预览
 
-阶段 2 的可运行工程。界面使用 WinUI 3/XAML，包含连接设置、密码登录入口、加密会话存储和启动验证；音乐播放、曲库、NAS OAuth、FN Connect 适配仍未完成。旧 Electron 客户端保留在仓库中。
+阶段 4 的原生预览工程。已实现登录、加密会话恢复、分页曲库、FFmpeg 播放及队列管理；NAS OAuth 和 FN Connect 仍待适配。旧 Electron 已归档，见 ../docs/ELECTRON_ARCHIVE.md。
 
 ## 构建与运行
 

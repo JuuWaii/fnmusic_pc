@@ -11,6 +11,7 @@ public sealed class PlaybackQueue(Random? random = null)
     public QueueMode Mode { get; set; }
     public int Index { get; private set; } = -1;
     public int Count => tracks.Length;
+    public IReadOnlyList<MusicTrack> Tracks => Array.AsReadOnly(tracks);
     public MusicTrack? Current => Index >= 0 && Index < tracks.Length ? tracks[Index] : null;
 
     public bool Replace(IEnumerable<MusicTrack> source, string selectedId)
@@ -53,6 +54,25 @@ public sealed class PlaybackQueue(Random? random = null)
         else if (Mode is QueueMode.RepeatAll or QueueMode.RepeatOne) Index = Count - 1;
         else return null;
         return Current;
+    }
+    public MusicTrack? Select(string id)
+    {
+        int selected = Array.FindIndex(tracks, t => t.Id == id);
+        if (selected < 0) return null;
+        if (Index >= 0 && Index != selected) history.Push(Index);
+        Index = selected;
+        return Current;
+    }
+    // 当前曲目由窗口负责停止；删除其他曲目保持当前曲目身份。
+    public bool Remove(string id)
+    {
+        int removed = Array.FindIndex(tracks, t => t.Id == id);
+        if (removed < 0) return false;
+        tracks = tracks.Where(t => t.Id != id).ToArray();
+        if (removed == Index) Index = -1;
+        else if (removed < Index) Index--;
+        history.Clear(); // 索引已变化，旧随机播放历史不再有效。
+        return true;
     }
     public void Clear() { tracks = []; Index = -1; history.Clear(); }
 }

@@ -291,6 +291,20 @@ await Test("queue clear prevents cross-account continuation", () =>
     Check(queue.Current is null && queue.Count == 0 && queue.Next(true) is null && queue.Previous() is null);
     return Task.CompletedTask;
 });
+await Test("queue removal preserves identity and discards stale shuffle history", () =>
+{
+    var queue = new PlaybackQueue(new Random(42)) { Mode = QueueMode.Shuffle };
+    queue.Replace(new[] { MakeTrack("a"), MakeTrack("b"), MakeTrack("c") }, "b");
+    Check(queue.Select("c")?.Id == "c");
+    Check(queue.Remove("a") && queue.Current?.Id == "c" && queue.Index == 1);
+    Check(queue.Previous()?.Id == "b");
+    Check(!queue.Remove("missing") && queue.Count == 2);
+    Check(queue.Select("missing") is null && queue.Current?.Id == "b");
+    Check(queue.Remove("b") && queue.Current is null && queue.Next(true) is null);
+    Check(queue.Select("c")?.Id == "c");
+    Check(queue.Remove("c") && queue.Count == 0 && queue.Previous() is null);
+    return Task.CompletedTask;
+});
 await Test("invalid queue replacement preserves the active snapshot", () =>
 {
     var queue = new PlaybackQueue();

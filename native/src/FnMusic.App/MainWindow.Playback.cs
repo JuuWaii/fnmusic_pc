@@ -152,7 +152,7 @@ public sealed partial class MainWindow
         if ((ViewModel.AuthenticatedClient is null && !IsSyntheticPreview) || closed) return;
         CancelWork(); music.Stop(); mediaReady = false;
         var ct = work.Token;
-        QueueStatus.Text = $"队列 {queue.Index + 1}/{queue.Count} · 来自开始播放时的当前页";
+        UpdateQueueStatus();
         PlaybackStatus.Text = "正在加载音频…";
         try
         {
@@ -171,6 +171,34 @@ public sealed partial class MainWindow
         catch (Exception) { if (!closed && !ct.IsCancellationRequested) PlaybackStatus.Text = "音频加载失败，请检查网络、登录状态或选择其他曲目。"; }
     }
     private void Pause_Click(object sender, RoutedEventArgs e) { music.Player.Pause(); if (mediaReady) PlaybackStatus.Text = "已暂停"; }
+    private void UpdateQueueStatus() => QueueStatus.Text = queue.Count == 0 ? "播放队列为空" :
+        $"队列 {queue.Index + 1}/{queue.Count} · 来自开始播放时的当前页";
+    private async void ManageQueue_Click(object sender, RoutedEventArgs e)
+    {
+        var list = new ListView { ItemsSource = queue.Tracks, DisplayMemberPath = "Title", SelectionMode = ListViewSelectionMode.Single, MaxHeight = 320 };
+        list.SelectedItem = queue.Current;
+        var remove = new Button { Content = "移除所选（当前曲目会停止）" };
+        var clear = new Button { Content = "清空队列并停止" };
+        var panel = new StackPanel { Spacing = 12 };
+        panel.Children.Add(list); panel.Children.Add(remove); panel.Children.Add(clear);
+        var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Title = "播放队列", Content = panel, PrimaryButtonText = "播放所选", CloseButtonText = "关闭", IsPrimaryButtonEnabled = list.SelectedItem is MusicTrack };
+        list.SelectionChanged += (_, _) => dialog.IsPrimaryButtonEnabled = list.SelectedItem is MusicTrack;
+        remove.Click += (_, _) =>
+        {
+            if (list.SelectedItem is not MusicTrack selected) return;
+            if (queue.Current?.Id == selected.Id) Stop_Click(sender, e);
+            queue.Remove(selected.Id);
+            list.ItemsSource = queue.Tracks; list.SelectedItem = queue.Current;
+            UpdateQueueStatus();
+        };
+        clear.Click += (_, _) =>
+        {
+            Stop_Click(sender, e); queue.Clear(); list.ItemsSource = queue.Tracks;
+            UpdateQueueStatus();
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary && list.SelectedItem is MusicTrack track && queue.Select(track.Id) is { } selectedTrack)
+            await PlayTrackAsync(selectedTrack);
+    }
     private void Resume_Click(object sender, RoutedEventArgs e) { if (mediaReady) { music.Player.Play(); PlaybackStatus.Text = "正在播放"; } }
     private void Stop_Click(object sender, RoutedEventArgs e) { CancelWork(); music.Stop(); mediaReady = false; PlaybackStatus.Text = "已停止"; NowPlaying.Text = ""; }
     private void Mute_Click(object sender, RoutedEventArgs e) => music.Player.IsMuted = MuteToggle.IsChecked == true;

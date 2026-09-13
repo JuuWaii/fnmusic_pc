@@ -7,6 +7,14 @@
 
 ## 1. 直接依赖（运行时 / 构建）
 
+### WinUI 3 原生预览新增依赖
+- Microsoft Windows App SDK / WinUI：由 Microsoft 及其贡献者提供；源代码与分发包中的许可证、NOTICE 和运行时许可要求分别适用。
+  项目：https://github.com/microsoft/WindowsAppSDK ，https://github.com/microsoft/microsoft-ui-xaml
+- .NET 与 System.Security.Cryptography.ProtectedData：由 .NET Foundation、Microsoft 及贡献者提供；保留对应包的许可证及第三方声明。
+  项目：https://github.com/dotnet/runtime
+- Microsoft.Windows.SDK.BuildTools：Windows SDK 构建工具，受其分发包附带的微软许可条款约束，不将其统一宣称为 MIT 组件。
+- 原生依赖的精确版本记录在 `native/` 项目及锁文件中。正式发布前必须汇总自包含运行时及传递依赖的许可文件，并检查最终安装包；本轮未发布安装包。
+
 ### Electron
 - 主页: https://github.com/electron/electron
 - 许可证: MIT License
@@ -78,3 +86,7 @@ SOFTWARE.
 ```
 
 > 各项目的完整许可文本以各项目仓库中的 LICENSE 文件为准。
+
+## FFmpeg（原生播放预览的外部依赖）
+
+FFmpeg 项目：https://ffmpeg.org/ 。其许可取决于具体构建选项，主体采用 LGPL，启用 GPL 组件的构建另受 GPL 约束，不能套用上面的 MIT 条款。当前仅调用开发环境已有的外部可执行程序，仓库和预览包尚未捆绑 FFmpeg。发布前必须固定构建版本、审核配置并提供对应许可和源码材料；详见 [播放层说明](docs/FFMPEG_PLAYBACK.md) 和 [FFmpeg 官方许可说明](https://ffmpeg.org/legal.html)。

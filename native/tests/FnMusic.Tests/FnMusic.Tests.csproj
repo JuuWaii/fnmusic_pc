@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/FnMusic.Infrastructure/FnMusic.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/FnMusic.Windows/FnMusic.Windows.csproj" />
+  </ItemGroup>
+</Project>

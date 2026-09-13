@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+ <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+ <resheader name="version"><value>2.0</value></resheader>
+ <data name="SettingsTitle.Text" xml:space="preserve"><value>连接与设置</value></data>
+ <data name="ServerAddress.Header" xml:space="preserve"><value>音乐服务器地址</value></data>
+ <data name="ServerAddress.PlaceholderText" xml:space="preserve"><value>输入 NAS 的 HTTP 或 HTTPS 地址</value></data>
+ <data name="ConnectButton.Content" xml:space="preserve"><value>保存并连接</value></data>
+ <data name="Username.Header" xml:space="preserve"><value>音乐账号</value></data>
+ <data name="Password.Header" xml:space="preserve"><value>密码</value></data>
+ <data name="RememberSession.Content" xml:space="preserve"><value>在这台电脑上记住登录</value></data>
+ <data name="LoginButton.Content" xml:space="preserve"><value>登录</value></data>
+ <data name="LogoutButton.Content" xml:space="preserve"><value>退出登录</value></data>
+</root>

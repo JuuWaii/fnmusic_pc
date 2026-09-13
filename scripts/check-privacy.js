@@ -63,7 +63,7 @@ function trackedFilesFromIndex() {
 
 /** 退化方案：扫描已知源码目录 */
 function fallbackFiles() {
-  const dirs = ['src', 'scripts', 'docs', 'build'];
+  const dirs = ['src', 'scripts', 'tests', 'docs', 'build', 'native', '.github'];
   const files = [];
   for (const d of dirs) {
     const base = path.join(ROOT, d);
@@ -71,8 +71,10 @@ function fallbackFiles() {
     const walk = (dir) => {
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const p = path.join(dir, e.name);
-        if (e.isDirectory()) walk(p);
-        else files.push(path.relative(ROOT, p).replace(/\\/g, '/'));
+        if (e.isSymbolicLink()) continue;
+        if (e.isDirectory()) {
+          if (!['bin', 'obj', '.vs', 'TestResults'].includes(e.name)) walk(p);
+        } else files.push(path.relative(ROOT, p).replace(/\\/g, '/'));
       }
     };
     walk(base);
@@ -84,14 +86,14 @@ function fallbackFiles() {
 }
 
 /** 禁止出现在版本库中的文件（用户个人配置） */
-const FORBIDDEN_FILES = ['dev.config.json', 'settings.json', '.local/dev.config.json'];
+const FORBIDDEN_FILES = ['dev.config.json', 'settings.json', '.local/dev.config.json', 'Project Introduction.txt'];
 
 /** 禁止出现在文本内容中的正则（个人信息/凭据） */
 const PATTERNS = [
   { name: '内网 IP 地址', re: /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b/ },
   { name: '外网 IPv4（非文档示例）', re: /\b(?:[1-9]\d?|1\d\d|2[0-4]\d|25[0-5])(?:\.(?:\d{1,2}|1\d\d|2[0-4]\d|25[0-5])){3}\b/ },
-  { name: '凭据（token/secret/password/key）', re: /(?:token|secret|password|passwd|api[_-]?key|authorization|sessionid)\s*[:=]\s*['"][^'"]{8,}['"]/i },
-  { name: 'Cookie 明文', re: /cookie\s*[:=]\s*['"][^'"]{10,}['"]/i },
+  { name: '凭据（token/secret/password/key）', re: /(?:token|secret|password|passwd|api[_-]?key|authorization|sessionid)\s*[:=]\s*(['"])[^'"\r\n]{8,}\1/i },
+  { name: 'Cookie 明文', re: /cookie\s*[:=]\s*(['"])[^'"\r\n]{10,}\1/i },
   { name: 'URL 内嵌凭据', re: /https?:\/\/[^\s/]+:[^\s/@]+@/ },
   // FN Connect 个人远程访问域名（官方代理域名的子域即个人地址）
   { name: 'FN Connect 个人域名', re: /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:fnos\.net|5ddd\.com|trzznas\.com)\b/i },
@@ -103,28 +105,35 @@ const PATTERNS = [
 /** 文档/示例文件中允许出现示例 IP */
 const ALLOW_IP_FILES = new Set(['README.md', 'docs/ARCHITECTURE.md', 'THIRD_PARTY_NOTICES.md', 'dev.config.json.example']);
 /** 允许出现 FN Connect 示例域名的文件（文档中的 xxxx.fnos.net 说明性示例） */
-const ALLOW_FNCONNECT_FILES = new Set(['README.md', 'docs/ARCHITECTURE.md', 'THIRD_PARTY_NOTICES.md', 'dev.config.json.example', 'REVIEW.md', 'scripts/check-privacy.js']);
+const ALLOW_FNCONNECT_FILES = new Set(['README.md', 'docs/ARCHITECTURE.md', 'THIRD_PARTY_NOTICES.md', 'dev.config.json.example', 'scripts/check-privacy.js']);
 const ALLOWED_IP = ['127.0.0.1', '0.0.0.0', '::1'];
 
 let violations = 0;
 const report = [];
 
 function checkFile(file) {
-  if (FORBIDDEN_FILES.includes(file)) {
+  if (FORBIDDEN_FILES.includes(file) || /^(?:\.chrome-debug|\.review-audit|\.tools)\//.test(file)) {
     violations++;
     report.push('✗ 禁止文件出现在版本库: ' + file);
     return;
   }
   // 点文件（.npmrc/.gitignore 等）也纳入内容扫描
   const isDotfile = /^\.[a-z0-9_-]+$/i.test(path.basename(file));
-  if (!isDotfile && !/\.(js|json|md|yml|yaml|html|css|txt|example)$/i.test(file)) return;
+  if (!isDotfile && !/\.(js|cjs|json|md|yml|yaml|html|css|txt|example|cs|csproj|xaml|resw|props|targets|config|manifest|sln|slnx|ps1)$/i.test(file)) return;
   let content;
   try {
     content = fs.readFileSync(path.join(ROOT, file), 'utf8');
   } catch { return; }
   for (const { name, re } of PATTERNS) {
-    const matches = content.match(re);
-    if (!matches) continue;
+    const matches = [...content.matchAll(new RegExp(re.source, re.flags + 'g'))].map(match => match[0]);
+    if (!matches.length) continue;
+    // 仅豁免这个已审查测试中的固定合成值，其后的其他匹配仍继续检查。
+    if (file === 'tests/nas-browser-probe.test.cjs' && name === '凭据（token/secret/password/key）') {
+      for (let i = matches.length - 1; i >= 0; i--) {
+        if (/^Token:\s*'PRIVATE_SESSION'$/.test(matches[i])) matches.splice(i, 1);
+      }
+      if (!matches.length) continue;
+    }
     // 回环地址（127.0.0.1 等）与文档示例永远豁免
     if (name === '外网 IPv4（非文档示例）') {
       const filtered = matches.filter((m) => !ALLOWED_IP.includes(m));
@@ -140,17 +149,19 @@ function checkFile(file) {
     // FN Connect 个人路径段：示例占位（xxxx / user-0001 / your-name 等中性值）与
     // 通用入口路径（music）豁免，但仅限中性值（审查轮 9 B P1）
     if (name === 'FN Connect 个人路径段') {
-      const filtered = matches.filter((m) => !/fnos\.net\/(?:xxxx|user-\d+|your-name|example|music)(?:\/|["'\s)]|$)/i.test(m));
+      const filtered = matches.filter((m) => !/fnos\.net\/(?:xxxx|user-\d+|your-name|example|music)(?:\/|["'\s)]|$)/i.test(m))
+        .filter(m => !(file === 'tests/headless.cjs' && /fnos\.net\/(?:music-box|x)(?:\/|["'\s)]|$)/i.test(m)));
       if (!filtered.length) continue;
     }
     violations++;
-    report.push('✗ [' + name + '] ' + file + ' → ' + matches.slice(0, 3).join(', '));
+    report.push('✗ [' + name + '] ' + file + '（匹配内容已隐藏）');
   }
 }
 
 console.log('=== FN Music PC 隐私合规检查 ===');
-const files = trackedFilesFromIndex() || fallbackFiles();
-console.log('扫描 ' + files.length + ' 个被跟踪文件');
+const files = [...new Set([...(trackedFilesFromIndex() || []), ...fallbackFiles()])]
+  .filter(file => fs.existsSync(path.join(ROOT, file)));
+console.log('扫描 ' + files.length + ' 个版本库及源码工作区文件');
 for (const f of files) checkFile(f);
 
 if (violations) {

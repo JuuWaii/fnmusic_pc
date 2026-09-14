@@ -172,28 +172,31 @@ public sealed partial class MainWindow
     }
     private void Pause_Click(object sender, RoutedEventArgs e) { music.Player.Pause(); if (mediaReady) PlaybackStatus.Text = "已暂停"; }
     private void UpdateQueueStatus() => QueueStatus.Text = queue.Count == 0 ? "播放队列为空" :
+        queue.Current is null ? $"队列 {queue.Count} 首 · 未选择播放曲目" :
         $"队列 {queue.Index + 1}/{queue.Count} · 来自开始播放时的当前页";
     private async void ManageQueue_Click(object sender, RoutedEventArgs e)
     {
         var list = new ListView { ItemsSource = queue.Tracks, DisplayMemberPath = "Title", SelectionMode = ListViewSelectionMode.Single, MaxHeight = 320 };
         list.SelectedItem = queue.Current;
-        var remove = new Button { Content = "移除所选（当前曲目会停止）" };
-        var clear = new Button { Content = "清空队列并停止" };
+        var remove = new Button { Content = "移除所选（当前曲目会停止）", IsEnabled = list.SelectedItem is MusicTrack };
+        var clear = new Button { Content = "清空队列并停止", IsEnabled = queue.Count > 0 };
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(list); panel.Children.Add(remove); panel.Children.Add(clear);
         var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Title = "播放队列", Content = panel, PrimaryButtonText = "播放所选", CloseButtonText = "关闭", IsPrimaryButtonEnabled = list.SelectedItem is MusicTrack };
-        list.SelectionChanged += (_, _) => dialog.IsPrimaryButtonEnabled = list.SelectedItem is MusicTrack;
+        list.SelectionChanged += (_, _) => remove.IsEnabled = dialog.IsPrimaryButtonEnabled = list.SelectedItem is MusicTrack;
         remove.Click += (_, _) =>
         {
             if (list.SelectedItem is not MusicTrack selected) return;
             if (queue.Current?.Id == selected.Id) Stop_Click(sender, e);
             queue.Remove(selected.Id);
             list.ItemsSource = queue.Tracks; list.SelectedItem = queue.Current;
+            clear.IsEnabled = queue.Count > 0;
             UpdateQueueStatus();
         };
         clear.Click += (_, _) =>
         {
             Stop_Click(sender, e); queue.Clear(); list.ItemsSource = queue.Tracks;
+            clear.IsEnabled = false;
             UpdateQueueStatus();
         };
         if (await dialog.ShowAsync() == ContentDialogResult.Primary && list.SelectedItem is MusicTrack track && queue.Select(track.Id) is { } selectedTrack)

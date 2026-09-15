@@ -150,6 +150,25 @@ await Test("search encodes query and preserves pagination and track mapping", as
     var found = await api.SearchTracksAsync("  中文 &?#+/歌曲  ", 2, 25, default);
     Check(found.Total == 26 && found.Tracks[0].Id == "search-track" && found.Tracks[0].DurationSeconds == 90);
 });
+await Test("search paginates complete results from servers ignoring page and size", async () =>
+{
+    using var api = new NasApiClient(endpoint, new FakeHandler(_ => Json("""{"code":0,"data":{"total":3,"list":[{"guid":"a"},{"guid":"b"},{"guid":"c"}]}}""")));
+    Check((await api.SearchTracksAsync("test", 1, 1, default)).Tracks.Single().Id == "a");
+    Check((await api.SearchTracksAsync("test", 2, 1, default)).Tracks.Single().Id == "b");
+    var last = await api.SearchTracksAsync("test", 2, 2, default);
+    Check(last.Tracks.Single().Id == "c" && last.Total == 3);
+    Check((await api.SearchTracksAsync("test", 4, 1, default)).Tracks.Count == 0);
+    Check((await api.SearchTracksAsync("test", int.MaxValue, 100, default)).Tracks.Count == 0);
+});
+await Test("search preserves server pages and rejects ambiguous oversized partial results", async () =>
+{
+    using var paged = new NasApiClient(endpoint, new FakeHandler(_ => Json("""{"code":0,"data":{"total":3,"list":[{"guid":"b"}]}}""")));
+    Check((await paged.SearchTracksAsync("test", 2, 1, default)).Tracks.Single().Id == "b");
+    using var oversized = new NasApiClient(endpoint, new FakeHandler(_ => Json("""{"code":0,"data":{"total":3,"list":[{"guid":"a"},{"guid":"b"}]}}""")));
+    await Fails(MusicFailure.InvalidResponse, () => oversized.SearchTracksAsync("test", 1, 1, default));
+    using var inconsistent = new NasApiClient(endpoint, new FakeHandler(_ => Json("""{"code":0,"data":{"total":0,"list":[{"guid":"a"}]}}""")));
+    await Fails(MusicFailure.InvalidResponse, () => inconsistent.SearchTracksAsync("test", 1, 50, default));
+});
 await Test("search rejects invalid input before HTTP and accepts empty result", async () =>
 {
     int calls = 0;

@@ -42,7 +42,17 @@ public sealed class NasApiClient : IDisposable
         if (query.Length is 0 or > 256) throw new ArgumentException("Invalid search query", nameof(query));
         using var data = await RequestAsync(HttpMethod.Get,
             $"search/track?q={Uri.EscapeDataString(query)}&page={page}&size={size}", null, ct);
-        return ParseTrackPage(data.RootElement);
+        var result = ParseTrackPage(data.RootElement);
+        // 当前 NAS 搜索会忽略 page/size 并返回完整集合；只在条数等于 total 时本地分页。
+        if (result.Tracks.Count == result.Total)
+        {
+            long offset = (long)(page - 1) * size;
+            return new TrackPage(offset >= result.Total ? [] : result.Tracks.Skip((int)offset).Take(size).ToArray(), result.Total);
+        }
+        // 不把未知的超长部分结果截断后伪装成一页，否则可能静默遗漏曲目。
+        if (result.Tracks.Count > size || result.Tracks.Count > result.Total)
+            throw new MusicApiException(MusicFailure.InvalidResponse);
+        return result;
     }
 
     private static TrackPage ParseTrackPage(JsonElement root)

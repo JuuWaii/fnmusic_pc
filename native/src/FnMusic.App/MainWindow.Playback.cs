@@ -128,7 +128,7 @@ public sealed partial class MainWindow
         {
             TrackPage result;
 #if DEBUG
-            if (IsSyntheticPreview) result = GetSyntheticPage(query);
+            if (IsSyntheticPreview) result = await GetSyntheticPageAsync(query, Math.Max(1, requestedPage));
             else
 #endif
             result = query.Length == 0

@@ -49,6 +49,8 @@ Debug 应用支持显式 `--verify-synthetic-playback`（内存合成音频）�
 
 支持双击歌曲行播放。进度条在拖动时预览目标，松手后跳转；已完成合成音频真实鼠标拖动与双击验证。Debug 参数 `--preview-synthetic` 打开静音交互测试窗口，使用合成曲目且不读取会话，Release 不启用此模式。后续事项见 [开发清单](../docs/NATIVE_BACKLOG.md)。
 
+搜索窗口验收可同时传入 `--preview-synthetic --preview-search`，生成 122 首合成曲目；查询 `0` 可检查三页结果，查询 `slow` 模拟忽略取消的 20 秒旧请求，用于检查清空后结果不会被覆盖。该附加参数仅在 Debug 合成模式中生效，不访问 NAS。
+
 ## 工具链参考
 
 - [.NET 发布清单](https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json)

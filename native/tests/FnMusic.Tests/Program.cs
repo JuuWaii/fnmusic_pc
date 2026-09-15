@@ -15,6 +15,78 @@ async Task Fails(MusicFailure failure, Func<Task> run)
     catch (MusicApiException ex) { Check(ex.Failure == failure); }
 }
 var endpoint = ServerEndpoint.Parse("https://nas.example.invalid/music/");
+await Test("collection lists preserve totals and optional counts", async () =>
+{
+    foreach (var kind in new[] { CollectionKind.Album, CollectionKind.Artist })
+    {
+        using var api = new NasApiClient(endpoint, new FakeHandler(request =>
+        {
+            Check(request.Method == HttpMethod.Get);
+            Check(request.RequestUri!.AbsolutePath.EndsWith(kind == CollectionKind.Album ? "/album/list" : "/artist/list"));
+            Check(request.RequestUri.Query == "?page=2&size=1");
+            return Json("""{"code":0,"data":{"list":[{"guid":"collection-a","name":"测试集合"}],"total":3}}""");
+        }));
+        var result = await api.ListCollectionsAsync(kind, 2, 1, default);
+        Check(result.Total == 3 && result.Items.Single().TrackCount is null);
+    }
+});
+await Test("collection detail supports observed envelopes and encodes identifiers", async () =>
+{
+    foreach (var kind in new[] { CollectionKind.Album, CollectionKind.Artist })
+    foreach (bool wrapped in new[] { false, true })
+    {
+        if (wrapped && kind == CollectionKind.Artist) continue;
+        using var api = new NasApiClient(endpoint, new FakeHandler(request =>
+        {
+            Check(request.RequestUri!.Query == "?guid=a%26b");
+            var item = new { guid = "a&b", name = "测试集合", trackCount = 4 };
+            return Json(JsonSerializer.Serialize(new { code = 0, data = wrapped ? (object)new { album = item } : item }));
+        }));
+        var result = await api.GetCollectionAsync(kind, "a&b", default);
+        Check(result.Name == "测试集合" && result.TrackCount == 4);
+    }
+});
+await Test("collection tracks use scoped paginated routes and album ordering", async () =>
+{
+    foreach (var kind in new[] { CollectionKind.Album, CollectionKind.Artist })
+    {
+        string path = kind == CollectionKind.Album ? "album" : "artist";
+        using var api = new NasApiClient(endpoint, new FakeHandler(request =>
+        {
+            Check(request.RequestUri!.AbsolutePath.EndsWith($"/track/{path}-detail/list"));
+            Check(request.RequestUri.Query == $"?{path}GUID=a%26b&page=2&size=1" + (kind == CollectionKind.Album ? "&sort=trackNo%2Casc" : ""));
+            return Json("""{"code":0,"data":{"list":[{"guid":"track-a","title":"测试歌曲","duration":61000}],"total":3}}""");
+        }));
+        var result = await api.ListCollectionTracksAsync(kind, "a&b", 2, 1, default);
+        Check(result.Total == 3 && result.Tracks.Single().DurationSeconds == 61);
+    }
+});
+await Test("collection malformed responses and mismatched detail are rejected", async () =>
+{
+    foreach (var data in new[] { "null", "{}", "{\"list\":[],\"total\":\"0\"}", "{\"list\":[{\"guid\":\"a\",\"name\":\"A\",\"trackCount\":-1}],\"total\":1}", "{\"list\":[{\"guid\":\"a\",\"name\":\"A\"}],\"total\":0}" })
+    {
+        using var api = new NasApiClient(endpoint, new FakeHandler(_ => Json("{\"code\":0,\"data\":" + data + "}")));
+        await Fails(MusicFailure.InvalidResponse, () => api.ListCollectionsAsync(CollectionKind.Album, 1, 1, default));
+    }
+    using var mismatch = new NasApiClient(endpoint, new FakeHandler(_ => Json("""{"code":0,"data":{"guid":"other","name":"A"}}""")));
+    await Fails(MusicFailure.InvalidResponse, () => mismatch.GetCollectionAsync(CollectionKind.Artist, "requested", default));
+});
+await Test("invalid collection arguments send no request and empty lists are valid", async () =>
+{
+    int calls = 0;
+    using var api = new NasApiClient(endpoint, new FakeHandler(_ => { calls++; return Json("""{"code":0,"data":{"list":[],"total":0}}"""); }));
+    foreach (var action in new Func<Task>[] {
+        () => api.ListCollectionsAsync((CollectionKind)99, 1, 1, default),
+        () => api.ListCollectionsAsync(CollectionKind.Album, 0, 1, default),
+        () => api.ListCollectionTracksAsync(CollectionKind.Artist, "a", 1, 101, default),
+        () => api.GetCollectionAsync(CollectionKind.Album, " ", default) })
+    {
+        try { await action(); throw new Exception("Accepted invalid argument"); } catch (ArgumentException) { }
+    }
+    Check(calls == 0);
+    Check((await api.ListCollectionsAsync(CollectionKind.Artist, 1, 50, default)).Items.Count == 0);
+    Check((await api.ListCollectionTracksAsync(CollectionKind.Album, "a", 1, 50, default)).Tracks.Count == 0);
+});
 await Test("canonical origin and connection identity", () =>
 {
     Check(endpoint.StorageKey == ServerEndpoint.Parse("https://NAS.example.invalid:443").StorageKey);

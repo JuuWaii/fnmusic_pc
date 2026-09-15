@@ -46,6 +46,14 @@
    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
    <StackPanel Spacing="12">
     <TextBlock Text="音乐资料库" Style="{ThemeResource TitleTextBlockStyle}" />
+    <StackPanel Orientation="Horizontal" Spacing="8">
+     <Button Content="歌曲" Click="Songs_Click"/>
+     <Button Content="专辑" Click="Albums_Click"/>
+     <Button Content="歌手" Click="Artists_Click"/>
+     <Button x:Name="CollectionBack" Content="返回列表" Click="CollectionBack_Click" Visibility="Collapsed"/>
+     <Button x:Name="CollectionOpen" Content="查看详情" Click="CollectionOpen_Click" Visibility="Collapsed"/>
+    </StackPanel>
+    <TextBlock x:Name="CollectionHeading" TextWrapping="Wrap" Visibility="Collapsed"/>
     <Grid ColumnSpacing="8">
      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
      <TextBox x:Name="SearchInput" PlaceholderText="搜索歌曲" AutomationProperties.Name="搜索歌曲" MaxLength="256"/>
@@ -59,6 +67,11 @@
      <TextBlock x:Name="PageStatus" VerticalAlignment="Center"/>
     </StackPanel>
    </StackPanel>
+   <ListView x:Name="CollectionList" Grid.Row="1" SelectionMode="Single" Visibility="Collapsed" IsItemClickEnabled="True" ItemClick="Collection_ItemClick">
+    <ListView.ItemTemplate><DataTemplate>
+     <StackPanel Padding="8"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Summary}" FontSize="12"/></StackPanel>
+    </DataTemplate></ListView.ItemTemplate>
+   </ListView>
    <ListView x:Name="TrackList" Grid.Row="1" SelectionMode="Single">
     <ListView.ItemTemplate><DataTemplate>
      <Grid Padding="8" ColumnSpacing="16" Background="Transparent" DoubleTapped="Track_DoubleTapped">

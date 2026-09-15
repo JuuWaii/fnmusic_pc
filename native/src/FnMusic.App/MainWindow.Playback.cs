@@ -106,11 +106,12 @@ public sealed partial class MainWindow
     }
     private async Task SearchAsync()
     {
+        collectionKind = null; collection = null; UpdateCollectionView();
         searchQuery = SearchInput.Text.Trim();
         await LoadPageAsync(1);
     }
     private async void ClearSearch_Click(object sender, RoutedEventArgs e)
-    { SearchInput.Text = ""; searchQuery = ""; await LoadPageAsync(1); }
+    { await SwitchCollectionAsync(null); }
 
     private async Task LoadPageAsync(int requestedPage)
     {
@@ -120,13 +121,48 @@ public sealed partial class MainWindow
         libraryWork.Cancel(); libraryWork.Dispose(); libraryWork = new();
         var ct = libraryWork.Token;
         string query = searchQuery;
+        var kind = collectionKind;
+        var selectedCollection = collection;
         page = 1; total = 0;
         PreviousPage.IsEnabled = NextPage.IsEnabled = false;
         TrackList.ItemsSource = null;
-        PageStatus.Text = query.Length == 0 ? "正在加载曲库…" : "正在搜索…";
+        CollectionList.ItemsSource = null; CollectionOpen.IsEnabled = false;
+        PageStatus.Text = kind is not null ? "正在加载…" : query.Length == 0 ? "正在加载曲库…" : "正在搜索…";
         try
         {
+            if (kind is not null && selectedCollection is null)
+            {
+                CollectionPage collections;
+#if DEBUG
+                if (IsSyntheticPreview) collections = new CollectionPage([new("synthetic-collection", $"合成{CollectionLabel}", 2)], 1);
+                else
+#endif
+                collections = await api!.ListCollectionsAsync(kind.Value, Math.Max(1, requestedPage), 50, ct);
+                if (ct.IsCancellationRequested || closed) return;
+                page = Math.Max(1, requestedPage); total = collections.Total;
+                CollectionList.ItemsSource = collections.Items;
+                CollectionList.SelectedIndex = collections.Items.Count > 0 ? 0 : -1;
+                CollectionOpen.IsEnabled = collections.Items.Count > 0;
+                PageStatus.Text = total == 0 ? $"暂无{CollectionLabel}。" : $"{CollectionLabel} · 第 {page} 页，共 {total} 项";
+                return;
+            }
             TrackPage result;
+            if (kind is not null && selectedCollection is not null)
+            {
+                MusicCollection detail;
+#if DEBUG
+                if (IsSyntheticPreview) { detail = selectedCollection; result = await GetSyntheticPageAsync("合成测试音频", Math.Max(1, requestedPage)); }
+                else
+#endif
+                {
+                    detail = await api!.GetCollectionAsync(kind.Value, selectedCollection.Id, ct);
+                    result = await api.ListCollectionTracksAsync(kind.Value, selectedCollection.Id, Math.Max(1, requestedPage), 50, ct);
+                }
+                if (ct.IsCancellationRequested || closed) return;
+                collection = detail; UpdateCollectionView();
+            }
+            else
+            {
 #if DEBUG
             if (IsSyntheticPreview) result = await GetSyntheticPageAsync(query, Math.Max(1, requestedPage));
             else
@@ -134,12 +170,13 @@ public sealed partial class MainWindow
             result = query.Length == 0
                 ? await api!.ListTracksAsync(Math.Max(1, requestedPage), 50, ct)
                 : await api!.SearchTracksAsync(query, Math.Max(1, requestedPage), 50, ct);
+            }
             if (ct.IsCancellationRequested || closed) return;
             page = Math.Max(1, requestedPage); total = result.Total;
             TrackList.ItemsSource = result.Tracks;
             TrackList.SelectedIndex = result.Tracks.Count > 0 ? 0 : -1;
-            PageStatus.Text = $"{(query.Length == 0 ? "曲库" : "搜索结果")} · 第 {page} 页，共 {total} 首";
-            if (result.Tracks.Count == 0) PageStatus.Text = query.Length == 0 ? "当前资料库暂无曲目。" : "没有找到匹配歌曲，可修改关键词重试。";
+            PageStatus.Text = $"{(kind is not null ? CollectionLabel : query.Length == 0 ? "曲库" : "搜索结果")} · 第 {page} 页，共 {total} 首";
+            if (result.Tracks.Count == 0) PageStatus.Text = kind is not null ? "当前详情暂无曲目。" : query.Length == 0 ? "当前资料库暂无曲目。" : "没有找到匹配歌曲，可修改关键词重试。";
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         catch (MusicApiException error) when (error.Failure == MusicFailure.Unauthorized)
@@ -169,7 +206,7 @@ public sealed partial class MainWindow
     {
         if (track.IsCue) { PlaybackStatus.Text = "CUE 分轨播放将在转码适配阶段接入。"; return; }
         if (TrackList.ItemsSource is not IEnumerable<MusicTrack> tracks || !queue.Replace(tracks, track.Id)) return;
-        queueOrigin = searchQuery.Length == 0 ? "曲库当前页" : "搜索结果当前页";
+        queueOrigin = collectionKind is not null ? $"{CollectionLabel}详情当前页" : searchQuery.Length == 0 ? "曲库当前页" : "搜索结果当前页";
         await PlayTrackAsync(track);
     }
     private async void PreviousTrack_Click(object sender, RoutedEventArgs e)
@@ -312,6 +349,8 @@ public sealed partial class MainWindow
         CancelWork(); music.Stop(); mediaReady = false;
         libraryWork.Cancel();
         searchQuery = ""; SearchInput.Text = "";
+        collectionKind = null; collection = null; collectionListPage = 1;
+        CollectionList.ItemsSource = null; CollectionOpen.IsEnabled = false; UpdateCollectionView();
         TrackList.ItemsSource = null; NowPlaying.Text = PageStatus.Text = "";
         queue.Clear(); QueueStatus.Text = "播放队列为空";
         page = 1; total = 0; PreviousPage.IsEnabled = NextPage.IsEnabled = false;

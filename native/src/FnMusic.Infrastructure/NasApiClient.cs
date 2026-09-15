@@ -7,7 +7,7 @@ using FnMusic.Core;
 
 namespace FnMusic.Infrastructure;
 
-public sealed class NasApiClient : IDisposable
+public sealed partial class NasApiClient : IDisposable
 {
     private readonly HttpClient http;
     private readonly ServerEndpoint endpoint;

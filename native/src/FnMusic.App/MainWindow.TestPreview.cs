@@ -27,16 +27,20 @@ public sealed partial class MainWindow
         Title = "飞牛音乐 · 合成音频交互验证";
         SettingsPanel.Visibility = Visibility.Collapsed;
         LibraryPanel.Visibility = Visibility.Visible;
-        TrackList.ItemsSource = new[]
+        await LoadPageAsync(1);
+        PlaybackStatus.Text = "合成音频交互验证，默认静音。";
+        music.Player.IsMuted = true; MuteToggle.IsChecked = true;
+        await LoadDevicesAsync();
+    }
+    private static TrackPage GetSyntheticPage(string query)
+    {
+        var tracks = new[]
         {
             new MusicTrack("synthetic-a", "合成测试音频 A", "测试夹具", 60, false),
             new MusicTrack("synthetic-b", "合成测试音频 B", "测试夹具", 60, false)
         };
-        TrackList.SelectedIndex = 0;
-        PageStatus.Text = "测试数据 · 不访问 NAS";
-        PlaybackStatus.Text = "合成音频交互验证，默认静音。";
-        music.Player.IsMuted = true; MuteToggle.IsChecked = true;
-        await LoadDevicesAsync();
+        var found = tracks.Where(t => t.Title.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        return new TrackPage(found, found.Length);
     }
 #endif
 }

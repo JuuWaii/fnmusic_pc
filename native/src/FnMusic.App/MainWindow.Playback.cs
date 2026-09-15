@@ -16,17 +16,22 @@ public sealed partial class MainWindow
     private readonly NativeMusicPlayer music = new();
     private readonly PlaybackQueue queue = new();
     private CancellationTokenSource work = new();
+    private CancellationTokenSource libraryWork = new();
+    private string searchQuery = "";
+    private string queueOrigin = "曲库当前页";
     private DispatcherQueueTimer? progressTimer;
     private DispatcherQueueTimer? seekTimer;
     private bool draggingSeek;
     private double? pendingSeek, submittedSeek;
     private DateTimeOffset seekDeadline;
     private int page = 1, total;
-    private bool loading, updatingProgress, closed, mediaReady;
+    private bool updatingProgress, closed, mediaReady;
     private sealed record OutputOption(string Name, DeviceInformation? Device);
 
     private void InitializePlayback()
     {
+        // 单行 TextBox 会处理 Enter；仍接收该路由事件以提交搜索。
+        SearchInput.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(Search_KeyDown), true);
         // Thumb 会处理指针事件，必须接收已处理事件才能可靠识别拖动结束。
         SeekSlider.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(Seek_Pressed), true);
         SeekSlider.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler(Seek_Released), true);
@@ -92,23 +97,49 @@ public sealed partial class MainWindow
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await LoadPageAsync(1);
     private async void Previous_Click(object sender, RoutedEventArgs e) => await LoadPageAsync(page - 1);
     private async void Next_Click(object sender, RoutedEventArgs e) => await LoadPageAsync(page + 1);
+    private async void Search_Click(object sender, RoutedEventArgs e) => await SearchAsync();
+    private async void Search_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != global::Windows.System.VirtualKey.Enter) return;
+        e.Handled = true;
+        await SearchAsync();
+    }
+    private async Task SearchAsync()
+    {
+        searchQuery = SearchInput.Text.Trim();
+        await LoadPageAsync(1);
+    }
+    private async void ClearSearch_Click(object sender, RoutedEventArgs e)
+    { SearchInput.Text = ""; searchQuery = ""; await LoadPageAsync(1); }
 
     private async Task LoadPageAsync(int requestedPage)
     {
         var api = ViewModel.AuthenticatedClient;
-        if (api is null) { PlaybackStatus.Text = "请先在连接与账号中登录。"; return; }
-        if (loading || closed) return;
-        var ct = work.Token;
-        loading = true; PreviousPage.IsEnabled = NextPage.IsEnabled = false;
+        if (api is null && !IsSyntheticPreview) { PlaybackStatus.Text = "请先在连接与账号中登录。"; return; }
+        if (closed) return;
+        libraryWork.Cancel(); libraryWork.Dispose(); libraryWork = new();
+        var ct = libraryWork.Token;
+        string query = searchQuery;
+        page = 1; total = 0;
+        PreviousPage.IsEnabled = NextPage.IsEnabled = false;
+        TrackList.ItemsSource = null;
+        PageStatus.Text = query.Length == 0 ? "正在加载曲库…" : "正在搜索…";
         try
         {
-            var result = await api.ListTracksAsync(Math.Max(1, requestedPage), 50, ct);
+            TrackPage result;
+#if DEBUG
+            if (IsSyntheticPreview) result = GetSyntheticPage(query);
+            else
+#endif
+            result = query.Length == 0
+                ? await api!.ListTracksAsync(Math.Max(1, requestedPage), 50, ct)
+                : await api!.SearchTracksAsync(query, Math.Max(1, requestedPage), 50, ct);
             if (ct.IsCancellationRequested || closed) return;
             page = Math.Max(1, requestedPage); total = result.Total;
             TrackList.ItemsSource = result.Tracks;
             TrackList.SelectedIndex = result.Tracks.Count > 0 ? 0 : -1;
-            PageStatus.Text = $"第 {page} 页，共 {total} 首";
-            PlaybackStatus.Text = result.Tracks.Count == 0 ? "当前资料库暂无曲目。" : "曲库已加载，选择曲目后播放。";
+            PageStatus.Text = $"{(query.Length == 0 ? "曲库" : "搜索结果")} · 第 {page} 页，共 {total} 首";
+            if (result.Tracks.Count == 0) PageStatus.Text = query.Length == 0 ? "当前资料库暂无曲目。" : "没有找到匹配歌曲，可修改关键词重试。";
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         catch (MusicApiException error) when (error.Failure == MusicFailure.Unauthorized)
@@ -116,11 +147,10 @@ public sealed partial class MainWindow
             if (!closed && !ct.IsCancellationRequested)
             { await ViewModel.ExpireSessionAsync(); PlaybackStatus.Text = "登录已失效，请在连接与账号中重新登录。"; }
         }
-        catch (Exception) { if (!closed && !ct.IsCancellationRequested) PlaybackStatus.Text = "曲库加载失败，请检查网络和登录状态后刷新。"; }
+        catch (Exception) { if (!closed && !ct.IsCancellationRequested) PageStatus.Text = "加载失败，请检查网络后重新搜索或刷新。"; }
         finally
         {
-            loading = false;
-            if (!closed) { PreviousPage.IsEnabled = page > 1; NextPage.IsEnabled = (long)page * 50 < total; }
+            if (!closed && !ct.IsCancellationRequested) { PreviousPage.IsEnabled = page > 1; NextPage.IsEnabled = (long)page * 50 < total; }
         }
     }
     private async void PlaySelected_Click(object sender, RoutedEventArgs e)
@@ -139,6 +169,7 @@ public sealed partial class MainWindow
     {
         if (track.IsCue) { PlaybackStatus.Text = "CUE 分轨播放将在转码适配阶段接入。"; return; }
         if (TrackList.ItemsSource is not IEnumerable<MusicTrack> tracks || !queue.Replace(tracks, track.Id)) return;
+        queueOrigin = searchQuery.Length == 0 ? "曲库当前页" : "搜索结果当前页";
         await PlayTrackAsync(track);
     }
     private async void PreviousTrack_Click(object sender, RoutedEventArgs e)
@@ -173,7 +204,7 @@ public sealed partial class MainWindow
     private void Pause_Click(object sender, RoutedEventArgs e) { music.Player.Pause(); if (mediaReady) PlaybackStatus.Text = "已暂停"; }
     private void UpdateQueueStatus() => QueueStatus.Text = queue.Count == 0 ? "播放队列为空" :
         queue.Current is null ? $"队列 {queue.Count} 首 · 未选择播放曲目" :
-        $"队列 {queue.Index + 1}/{queue.Count} · 来自开始播放时的当前页";
+        $"队列 {queue.Index + 1}/{queue.Count} · 来自开始播放时的{queueOrigin}";
     private async void ManageQueue_Click(object sender, RoutedEventArgs e)
     {
         var list = new ListView { ItemsSource = queue.Tracks, DisplayMemberPath = "Title", SelectionMode = ListViewSelectionMode.Single, MaxHeight = 320 };
@@ -279,11 +310,13 @@ public sealed partial class MainWindow
     private void ResetLibrary()
     {
         CancelWork(); music.Stop(); mediaReady = false;
+        libraryWork.Cancel();
+        searchQuery = ""; SearchInput.Text = "";
         TrackList.ItemsSource = null; NowPlaying.Text = PageStatus.Text = "";
         queue.Clear(); QueueStatus.Text = "播放队列为空";
         page = 1; total = 0; PreviousPage.IsEnabled = NextPage.IsEnabled = false;
         PlaybackStatus.Text = "登录后刷新曲库。";
     }
     private void ClosePlayback()
-    { closed = true; ResetSeek(); progressTimer?.Stop(); work.Cancel(); work.Dispose(); music.Dispose(); }
+    { closed = true; ResetSeek(); progressTimer?.Stop(); libraryWork.Cancel(); libraryWork.Dispose(); work.Cancel(); work.Dispose(); music.Dispose(); }
 }

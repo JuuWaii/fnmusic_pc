@@ -139,6 +139,39 @@ await Test("track page rejects malformed total without exposing response", async
     using var api = new NasApiClient(endpoint, new FakeHandler(_ => Json("""{"code":0,"data":{"total":"private","list":[]}}""")));
     await Fails(MusicFailure.InvalidResponse, () => api.ListTracksAsync(1, 50, default));
 });
+await Test("search encodes query and preserves pagination and track mapping", async () =>
+{
+    using var api = new NasApiClient(endpoint, new FakeHandler(request =>
+    {
+        Check(request.RequestUri!.AbsolutePath == "/music/api/v1/search/track");
+        Check(request.RequestUri.Query == "?q=" + Uri.EscapeDataString("中文 &?#+/歌曲") + "&page=2&size=25");
+        return Json("""{"code":0,"data":{"total":26,"list":[{"guid":"search-track","title":"测试","duration":90000}]}}""");
+    }));
+    var found = await api.SearchTracksAsync("  中文 &?#+/歌曲  ", 2, 25, default);
+    Check(found.Total == 26 && found.Tracks[0].Id == "search-track" && found.Tracks[0].DurationSeconds == 90);
+});
+await Test("search rejects invalid input before HTTP and accepts empty result", async () =>
+{
+    int calls = 0;
+    using var api = new NasApiClient(endpoint, new FakeHandler(_ => { calls++; return Json("""{"code":0,"data":{"total":0,"list":[]}}"""); }));
+    foreach (var query in new[] { " ", new string('x',257) })
+    {
+        try { await api.SearchTracksAsync(query, 1, 50, default); throw new Exception("Invalid query accepted"); }
+        catch (ArgumentException) { }
+    }
+    try { await api.SearchTracksAsync("test", 0, 50, default); throw new Exception("Invalid page accepted"); }
+    catch (ArgumentOutOfRangeException) { }
+    Check(calls == 0);
+    var found = await api.SearchTracksAsync("test", 1, 50, default);
+    Check(found.Total == 0 && found.Tracks.Count == 0 && calls == 1);
+});
+await Test("search handles expired sessions and malformed response", async () =>
+{
+    using var expired = new NasApiClient(endpoint, new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized)));
+    await Fails(MusicFailure.Unauthorized, () => expired.SearchTracksAsync("test", 1, 50, default));
+    using var malformed = new NasApiClient(endpoint, new FakeHandler(_ => Json("""{"code":0,"data":{"total":1,"list":[{"title":"private"}]}}""")));
+    await Fails(MusicFailure.InvalidResponse, () => malformed.SearchTracksAsync("test", 1, 50, default));
+});
 await Test("range stream seeks across cache blocks and reaches EOF", async () =>
 {
     byte[] song = Enumerable.Range(0, 600000).Select(i => (byte)(i % 251)).ToArray();

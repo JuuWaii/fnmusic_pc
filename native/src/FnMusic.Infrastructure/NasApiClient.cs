@@ -32,7 +32,21 @@ public sealed class NasApiClient : IDisposable
     {
         if (page < 1 || size is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(page));
         using var data = await RequestAsync(HttpMethod.Get, $"track/list?page={page}&size={size}", null, ct);
-        var root = data.RootElement;
+        return ParseTrackPage(data.RootElement);
+    }
+
+    public async Task<TrackPage> SearchTracksAsync(string query, int page, int size, CancellationToken ct)
+    {
+        if (page < 1 || size is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(page));
+        query = query.Trim();
+        if (query.Length is 0 or > 256) throw new ArgumentException("Invalid search query", nameof(query));
+        using var data = await RequestAsync(HttpMethod.Get,
+            $"search/track?q={Uri.EscapeDataString(query)}&page={page}&size={size}", null, ct);
+        return ParseTrackPage(data.RootElement);
+    }
+
+    private static TrackPage ParseTrackPage(JsonElement root)
+    {
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("list", out var list) || list.ValueKind != JsonValueKind.Array ||
             !root.TryGetProperty("total", out var total) || total.ValueKind != JsonValueKind.Number || !total.TryGetInt32(out int count) || count < 0)
             throw new MusicApiException(MusicFailure.InvalidResponse);

@@ -17,7 +17,7 @@
 
 [原生工程说明](native/README.md) · [阶段进度](docs/PHASE_STATUS.md) · [开发清单](docs/NATIVE_BACKLOG.md) · [FFmpeg 播放层](docs/FFMPEG_PLAYBACK.md)
 
-搜索、专辑/歌手、收藏和歌单、FN Connect、OAuth、桌面集成及发布验收仍待后续。
+歌曲搜索与分页已接入，真实 NAS 验收及部分键盘交互复测仍待完成，见 [搜索状态](docs/NATIVE_SEARCH.md)。专辑/歌手、收藏和歌单、FN Connect、OAuth、桌面集成及发布验收仍待后续。
 
 ## Electron 归档
 

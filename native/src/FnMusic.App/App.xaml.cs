@@ -9,6 +9,8 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
 #if DEBUG
+        if (Environment.GetCommandLineArgs().Contains("--verify-native-collections"))
+        { RunCollectionVerification(); return; }
         if (Environment.GetCommandLineArgs().Contains("--verify-native-search"))
         { RunSearchVerification(); return; }
         if (Environment.GetCommandLineArgs().Any(a => a is "--verify-native-playback" or "--verify-synthetic-playback"))
@@ -21,6 +23,8 @@ public partial class App : Application
         window.Activate();
     }
 #if DEBUG
+    private async void RunCollectionVerification()
+    { await Services.CollectionVerification.RunAsync(); Exit(); }
     private async void RunSearchVerification()
     { await Services.SearchVerification.RunAsync(); Exit(); }
     private async void RunPlaybackVerification()

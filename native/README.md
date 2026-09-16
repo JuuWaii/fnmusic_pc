@@ -51,6 +51,8 @@ Debug 应用支持显式 `--verify-synthetic-playback`（内存合成音频）�
 
 搜索窗口验收可同时传入 `--preview-synthetic --preview-search`，生成 122 首合成曲目；查询 `0` 可检查三页结果，查询 `slow` 模拟忽略取消的 20 秒旧请求，用于检查清空后结果不会被覆盖。该附加参数仅在 Debug 合成模式中生效，不访问 NAS。
 
+Debug 参数 `--verify-native-collections` 使用本应用已保存会话，对专辑/歌手列表、详情及歌曲分页执行只读验收，结束后自动退出；脱敏结果写入对应输出目录的 `collection-verification.json`。数据不足的检查会记录为跳过，Release 不启用此入口。
+
 ## 工具链参考
 
 - [.NET 发布清单](https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json)

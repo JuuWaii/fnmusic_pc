@@ -134,7 +134,7 @@ public sealed partial class MainWindow
             {
                 CollectionPage collections;
 #if DEBUG
-                if (IsSyntheticPreview) collections = new CollectionPage([new("synthetic-collection", $"合成{CollectionLabel}", 2)], 1);
+                if (IsSyntheticPreview) collections = GetSyntheticCollections(kind.Value, Math.Max(1, requestedPage));
                 else
 #endif
                 collections = await api!.ListCollectionsAsync(kind.Value, Math.Max(1, requestedPage), 50, ct);
@@ -151,7 +151,7 @@ public sealed partial class MainWindow
             {
                 MusicCollection detail;
 #if DEBUG
-                if (IsSyntheticPreview) { detail = selectedCollection; result = await GetSyntheticPageAsync("合成测试音频", Math.Max(1, requestedPage)); }
+                if (IsSyntheticPreview) { detail = selectedCollection; result = await GetSyntheticCollectionTracksAsync(selectedCollection, Math.Max(1, requestedPage)); }
                 else
 #endif
                 {

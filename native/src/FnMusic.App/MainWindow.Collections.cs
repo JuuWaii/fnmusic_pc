@@ -30,6 +30,8 @@ public sealed partial class MainWindow
     private async void Albums_Click(object sender, RoutedEventArgs e) => await SwitchCollectionAsync(CollectionKind.Album);
     private async void Artists_Click(object sender, RoutedEventArgs e) => await SwitchCollectionAsync(CollectionKind.Artist);
     private async void CollectionBack_Click(object sender, RoutedEventArgs e)
+    { await ReturnToCollectionListAsync(); }
+    private async Task ReturnToCollectionListAsync()
     { collection = null; UpdateCollectionView(); await LoadPageAsync(collectionListPage); }
     private async void CollectionOpen_Click(object sender, RoutedEventArgs e)
     { if (CollectionList.SelectedItem is MusicCollection item) await OpenCollectionAsync(item); }

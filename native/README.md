@@ -53,6 +53,8 @@ Debug 应用支持显式 `--verify-synthetic-playback`（内存合成音频）�
 
 Debug 参数 `--verify-native-collections` 使用本应用已保存会话，对专辑/歌手列表、详情及歌曲分页执行只读验收，结束后自动退出；脱敏结果写入对应输出目录的 `collection-verification.json`。数据不足的检查会记录为跳过，Release 不启用此入口。
 
+Debug 窗口回归：`--preview-synthetic --preview-collections` 提供两页专辑/歌手、两页详情歌曲、空详情及 20 秒延迟详情。追加 `--verify-collection-window` 可执行窗口内状态断言，写入 `collection-window-verification.json` 并自动退出；不模拟鼠标，不访问 NAS。
+
 ## 工具链参考
 
 - [.NET 发布清单](https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json)

@@ -24,7 +24,7 @@ public sealed partial class MainWindow
     // 显式测试入口隔离真实账户与曲名；仍使用生产 XAML、事件和播放器。
     private async Task ShowSyntheticPreviewAsync()
     {
-        Title = Environment.GetCommandLineArgs().Contains("--preview-search") ? "飞牛音乐 · 合成搜索交互验证" : "飞牛音乐 · 合成音频交互验证";
+        Title = Environment.GetCommandLineArgs().Contains("--preview-collections") ? "飞牛音乐 · 合成专辑歌手验证" : Environment.GetCommandLineArgs().Contains("--preview-search") ? "飞牛音乐 · 合成搜索交互验证" : "飞牛音乐 · 合成音频交互验证";
         SettingsPanel.Visibility = Visibility.Collapsed;
         LibraryPanel.Visibility = Visibility.Visible;
         await LoadPageAsync(1);
@@ -47,6 +47,25 @@ public sealed partial class MainWindow
         }
         var found = tracks.Where(t => t.Title.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
         return new TrackPage(found.Skip((requestedPage - 1) * 50).Take(50).ToArray(), found.Length);
+    }
+    private static CollectionPage GetSyntheticCollections(CollectionKind kind, int requestedPage)
+    {
+        string label = kind == CollectionKind.Album ? "专辑" : "歌手";
+        if (!Environment.GetCommandLineArgs().Contains("--preview-collections"))
+            return new CollectionPage([new("synthetic-collection", $"合成{label}", 2)], 1);
+        var items = Enumerable.Range(1, 53).Select(i => new MusicCollection($"collection-{i}",
+            i == 52 ? $"空{label}" : i == 53 ? $"延迟{label}（20 秒）" : $"合成{label} {i:000}", i == 52 ? 0 : 53)).ToArray();
+        return new CollectionPage(items.Skip((requestedPage - 1) * 50).Take(50).ToArray(), items.Length);
+    }
+    private static async Task<TrackPage> GetSyntheticCollectionTracksAsync(MusicCollection item, int requestedPage)
+    {
+        if (!Environment.GetCommandLineArgs().Contains("--preview-collections"))
+            return await GetSyntheticPageAsync("合成测试音频", requestedPage);
+        // 故意忽略取消，验证迟到详情不得恢复旧标题、列表或分页按钮。
+        if (item.Id == "collection-53") await Task.Delay(20000);
+        int count = item.TrackCount ?? 0;
+        var tracks = Enumerable.Range(1, count).Select(i => new MusicTrack($"{item.Id}-track-{i}", $"详情歌曲 {i:000}", "测试夹具", 60, false));
+        return new TrackPage(tracks.Skip((requestedPage - 1) * 50).Take(50).ToArray(), count);
     }
 #endif
 }

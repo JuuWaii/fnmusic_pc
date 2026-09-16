@@ -19,6 +19,8 @@ public sealed partial class MainWindow : Window
     {
         Root.Loaded -= Root_Loaded;
 #if DEBUG
+        if (Environment.GetCommandLineArgs().Contains("--verify-collection-window") && IsSyntheticPreview)
+        { await VerifyCollectionWindowAsync(); Close(); return; }
         if (IsSyntheticPreview) { await ShowSyntheticPreviewAsync(); return; }
 #endif
         await ViewModel.InitializeAsync();

@@ -15,6 +15,39 @@ async Task Fails(MusicFailure failure, Func<Task> run)
     catch (MusicApiException ex) { Check(ex.Failure == failure); }
 }
 var endpoint = ServerEndpoint.Parse("https://nas.example.invalid/music/");
+await Test("late unauthorized responses cannot invalidate a replaced session", async () =>
+{
+    foreach (bool businessError in new[] { false, true })
+    {
+        var response = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        int calls = 0;
+        using var api = new NasApiClient(endpoint, new AsyncFakeHandler(request =>
+        {
+            if (++calls == 1) return response.Task;
+            Check(request.Headers.GetValues("Cookie").Single() == "music-token=new-session");
+            return Task.FromResult(Json("""{"code":0,"data":{"name":"测试账户"}}"""));
+        }));
+        api.RestoreSession("old-session");
+        var pending = api.GetCurrentUserAsync(default);
+        api.RestoreSession("new-session");
+        response.SetResult(businessError ? Json("""{"code":120001}""") : new HttpResponseMessage(HttpStatusCode.Unauthorized));
+        await Fails(MusicFailure.Unavailable, () => pending);
+        Check((await api.GetCurrentUserAsync(default)).Name == "测试账户");
+    }
+});
+await Test("network failure preserves authentication for collection retry", async () =>
+{
+    int calls = 0;
+    using var api = new NasApiClient(endpoint, new FakeHandler(request =>
+    {
+        Check(request.Headers.GetValues("Cookie").Single() == "music-token=test-session");
+        if (++calls == 1) throw new HttpRequestException("synthetic failure");
+        return Json("""{"code":0,"data":{"list":[],"total":0}}""");
+    }));
+    api.RestoreSession("test-session");
+    await Fails(MusicFailure.Unavailable, () => api.ListCollectionsAsync(CollectionKind.Album, 1, 50, default));
+    Check((await api.ListCollectionsAsync(CollectionKind.Album, 1, 50, default)).Total == 0 && calls == 2);
+});
 await Test("collection lists preserve totals and optional counts", async () =>
 {
     foreach (var kind in new[] { CollectionKind.Album, CollectionKind.Artist })
@@ -445,6 +478,10 @@ static HttpResponseMessage Json(string content) => new(HttpStatusCode.OK) { Cont
 sealed class FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> response) : HttpMessageHandler
 {
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(response(request));
+}
+sealed class AsyncFakeHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> response) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => response(request);
 }
 static class UriExtensions
 {

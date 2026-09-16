@@ -5,6 +5,9 @@ namespace FnMusic.App;
 
 public sealed partial class MainWindow
 {
+#if DEBUG
+    private (MusicFailure Failure, int DelayMilliseconds)? syntheticLibraryFailure;
+#endif
     private bool IsSyntheticPreview =>
 #if DEBUG
         Environment.GetCommandLineArgs().Contains("--preview-synthetic");

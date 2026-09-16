@@ -12,6 +12,8 @@ public sealed partial class NasApiClient : IDisposable
     private readonly HttpClient http;
     private readonly ServerEndpoint endpoint;
     private string? token;
+    private readonly object sessionGate = new();
+    private long sessionVersion;
     public NasApiClient(ServerEndpoint endpoint, HttpMessageHandler? handler = null)
     {
         this.endpoint = endpoint;
@@ -24,9 +26,22 @@ public sealed partial class NasApiClient : IDisposable
         if (string.IsNullOrWhiteSpace(sessionToken) || sessionToken.Length > 16384 ||
             sessionToken.Any(c => c < 33 || c > 126 || c is ';' or ','))
             throw new MusicApiException(MusicFailure.InvalidResponse);
-        token = sessionToken;
+        lock (sessionGate) { token = sessionToken; sessionVersion++; }
     }
-    public void ClearSession() => token = null;
+    public void ClearSession() { lock (sessionGate) { token = null; sessionVersion++; } }
+    private (string? Token, long Version) CaptureSession()
+    { lock (sessionGate) return (token, sessionVersion); }
+    private void RejectSession(long requestVersion, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        lock (sessionGate)
+        {
+            // 旧会话的失败不能清除新会话，也不能通知上层将新会话判为失效。
+            if (sessionVersion != requestVersion) throw new MusicApiException(MusicFailure.Unavailable);
+            token = null; sessionVersion++;
+        }
+        throw new MusicApiException(MusicFailure.Unauthorized);
+    }
 
     public async Task<TrackPage> ListTracksAsync(int page, int size, CancellationToken ct)
     {
@@ -78,9 +93,10 @@ public sealed partial class NasApiClient : IDisposable
     public async Task<HttpRangeStream> OpenTrackStreamAsync(string id, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(id) || id.Length > 256) throw new ArgumentException("Invalid track identifier");
-        if (token is null) throw new MusicApiException(MusicFailure.Unauthorized);
+        var session = CaptureSession();
+        if (session.Token is null) throw new MusicApiException(MusicFailure.Unauthorized);
         var transport = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = TimeSpan.FromSeconds(15) };
-        transport.DefaultRequestHeaders.Add("Cookie", "music-token=" + Uri.EscapeDataString(token));
+        transport.DefaultRequestHeaders.Add("Cookie", "music-token=" + Uri.EscapeDataString(session.Token));
         return await HttpRangeStream.OpenAsync(transport, new Uri(endpoint.ApiUri, "track/stream?guid=" + Uri.EscapeDataString(id)), ct).ConfigureAwait(false);
     }
 
@@ -125,15 +141,16 @@ public sealed partial class NasApiClient : IDisposable
     }
     private async Task<JsonDocument> RequestAsync(HttpMethod method, string path, object? body, CancellationToken ct)
     {
+        var session = CaptureSession();
         using var request = new HttpRequestMessage(method, new Uri(endpoint.ApiUri, path));
-        if (token is not null) request.Headers.Add("Cookie", "music-token=" + Uri.EscapeDataString(token));
+        if (session.Token is not null) request.Headers.Add("Cookie", "music-token=" + Uri.EscapeDataString(session.Token));
         request.Headers.Accept.ParseAdd("application/json");
         if (body is not null) request.Content = JsonContent.Create(body);
         try
         {
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             if ((int)response.StatusCode is >= 300 and < 400) throw new MusicApiException(MusicFailure.RedirectRejected);
-            if (response.StatusCode == HttpStatusCode.Unauthorized) { ClearSession(); throw new MusicApiException(MusicFailure.Unauthorized); }
+            if (response.StatusCode == HttpStatusCode.Unauthorized) RejectSession(session.Version, ct);
             if (!response.IsSuccessStatusCode) throw new MusicApiException(MusicFailure.Rejected);
             // 即使 Content-Length 缺失也限制读取量，防止异常响应耗尽内存。
             using var input = await response.Content.ReadAsStreamAsync(ct);
@@ -149,7 +166,7 @@ public sealed partial class NasApiClient : IDisposable
             var root = envelope.RootElement;
             if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("code", out var code) || code.ValueKind != JsonValueKind.Number || !code.TryGetInt32(out int codeValue))
                 throw new MusicApiException(MusicFailure.InvalidResponse);
-            if (codeValue == 120001) { ClearSession(); throw new MusicApiException(MusicFailure.Unauthorized); }
+            if (codeValue == 120001) RejectSession(session.Version, ct);
             if (codeValue is not (0 or 200)) throw new MusicApiException(MusicFailure.Rejected);
             return JsonDocument.Parse(root.TryGetProperty("data", out var data) ? data.GetRawText() : "null");
         }

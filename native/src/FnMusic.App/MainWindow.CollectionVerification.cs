@@ -23,9 +23,9 @@ public sealed partial class MainWindow
                 string prefix = kind == CollectionKind.Album ? "album" : "artist";
                 await SwitchCollectionAsync(kind);
                 Verify(prefix + "_first_page", page == 1 && total == 53 && !PreviousPage.IsEnabled && NextPage.IsEnabled &&
-                    ((IEnumerable<MusicCollection>)CollectionList.ItemsSource).Count() == 50);
+                    CollectionList.ItemsSource is IEnumerable<MusicCollection> firstItems && firstItems.Count() == 50);
                 await LoadPageAsync(2);
-                var items = ((IEnumerable<MusicCollection>)CollectionList.ItemsSource).ToArray();
+                var items = (CollectionList.ItemsSource as IEnumerable<MusicCollection> ?? throw new InvalidOperationException()).ToArray();
                 Verify(prefix + "_last_page", page == 2 && items.Length == 3 && items[0].Id == "collection-51" && PreviousPage.IsEnabled && !NextPage.IsEnabled);
                 await OpenCollectionAsync(items[0]);
                 Verify(prefix + "_detail_first_page", page == 1 && total == 53 && TrackList.Visibility == Visibility.Visible && NextPage.IsEnabled);
@@ -45,6 +45,24 @@ public sealed partial class MainWindow
                 await pending;
                 Verify(prefix + "_stale_detail_ignored", collection is null && page == 1 && total == 53 && CollectionHeading.Text == expectedHeading &&
                     CollectionList.Visibility == Visibility.Visible && TrackList.ItemsSource is null && NextPage.IsEnabled);
+                syntheticLibraryFailure = (MusicFailure.Unavailable, 0);
+                await LoadPageAsync(1);
+                Verify(prefix + "_network_error", CollectionList.ItemsSource is null && !CollectionOpen.IsEnabled &&
+                    !PreviousPage.IsEnabled && !NextPage.IsEnabled && PageStatus.Text.StartsWith("加载失败"));
+                await LoadPageAsync(1);
+                Verify(prefix + "_network_retry", total == 53 && CollectionOpen.IsEnabled && NextPage.IsEnabled);
+                var queuedTrack = new MusicTrack("synthetic-queued", "合成曲目", "测试夹具", 60, false);
+                queue.Replace([queuedTrack], queuedTrack.Id);
+                syntheticLibraryFailure = (MusicFailure.Unauthorized, 100);
+                var staleFailure = LoadPageAsync(1);
+                await SwitchCollectionAsync(kind);
+                await staleFailure;
+                Verify(prefix + "_stale_unauthorized_ignored", collectionKind == kind && total == 53 && queue.Count == 1 && CollectionOpen.IsEnabled);
+                syntheticLibraryFailure = (MusicFailure.Unauthorized, 0);
+                await LoadPageAsync(1);
+                Verify(prefix + "_expired_session_reset", collectionKind is null && collection is null && queue.Count == 0 &&
+                    CollectionList.ItemsSource is null && TrackList.ItemsSource is null && !NextPage.IsEnabled &&
+                    CollectionHeading.Visibility == Visibility.Collapsed && PlaybackStatus.Text.StartsWith("登录已失效"));
             }
             stage = "complete";
         }

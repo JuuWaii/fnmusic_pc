@@ -130,6 +130,14 @@ public sealed partial class MainWindow
         PageStatus.Text = kind is not null ? "正在加载…" : query.Length == 0 ? "正在加载曲库…" : "正在搜索…";
         try
         {
+#if DEBUG
+            if (IsSyntheticPreview && syntheticLibraryFailure is { } fault)
+            {
+                syntheticLibraryFailure = null;
+                if (fault.DelayMilliseconds > 0) await Task.Delay(fault.DelayMilliseconds);
+                throw new MusicApiException(fault.Failure);
+            }
+#endif
             if (kind is not null && selectedCollection is null)
             {
                 CollectionPage collections;

@@ -56,6 +56,30 @@ internal static class CollectionVerification
                     checks[stage] = next.Total == tracks.Total && next.Tracks.Count == 1 && next.Tracks[0].Id != tracks.Tracks[0].Id;
                 }
                 else skipped.Add(prefix + "_track_pagination_insufficient_items");
+                if (kind == CollectionKind.Artist)
+                {
+                    stage = "artist_albums_list";
+                    var albums = await api.ListArtistAlbumsAsync(item.Id, 1, 1, timeout.Token);
+                    checks[stage] = albums.Items.Count == (albums.Total > 0 ? 1 : 0);
+                    if (albums.Total > 1)
+                    {
+                        stage = "artist_albums_pagination";
+                        var nextAlbums = await api.ListArtistAlbumsAsync(item.Id, 2, 1, timeout.Token);
+                        checks[stage] = nextAlbums.Total == albums.Total && nextAlbums.Items.Count == 1 && nextAlbums.Items[0].Id != albums.Items[0].Id;
+                    }
+                    else skipped.Add("artist_albums_pagination_insufficient_items");
+                    if (albums.Items.Count > 0)
+                    {
+                        stage = "artist_album_detail";
+                        var album = albums.Items[0];
+                        var albumDetail = await api.GetCollectionAsync(CollectionKind.Album, album.Id, timeout.Token);
+                        checks[stage] = albumDetail.Id == album.Id && albumDetail.Name == album.Name;
+                        stage = "artist_album_tracks";
+                        var albumTracks = await api.ListCollectionTracksAsync(CollectionKind.Album, album.Id, 1, 1, timeout.Token);
+                        checks[stage] = albumTracks.Tracks.Count == (albumTracks.Total > 0 ? 1 : 0);
+                    }
+                    else skipped.Add("artist_album_detail_empty_list");
+                }
             }
             stage = checks.Values.All(value => value) ? (skipped.Count == 0 ? "complete" : "complete_with_skips") : "contract_mismatch";
         }

@@ -15,6 +15,26 @@ async Task Fails(MusicFailure failure, Func<Task> run)
     catch (MusicApiException ex) { Check(ex.Failure == failure); }
 }
 var endpoint = ServerEndpoint.Parse("https://nas.example.invalid/music/");
+await Test("artist albums use scoped encoded pagination and strict collection parsing", async () =>
+{
+    int calls = 0;
+    using var api = new NasApiClient(endpoint, new FakeHandler(request =>
+    {
+        calls++;
+        Check(request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath.EndsWith("/album/artist-detail/list"));
+        Check(request.RequestUri!.Query == "?artistGUID=a%26b&page=2&size=1");
+        return Json("""{"code":0,"data":{"list":[{"guid":"album-a","name":"测试专辑","trackCount":2}],"total":3}}""");
+    }));
+    var result = await api.ListArtistAlbumsAsync("a&b", 2, 1, default);
+    Check(result.Total == 3 && result.Items.Single().Id == "album-a");
+    try { await api.ListArtistAlbumsAsync(" ", 2, 1, default); throw new Exception("Invalid ID accepted"); } catch (ArgumentException) { }
+    try { await api.ListArtistAlbumsAsync("a", 0, 1, default); throw new Exception("Invalid page accepted"); } catch (ArgumentException) { }
+    Check(calls == 1);
+    using var empty = new NasApiClient(endpoint, new FakeHandler(_ => Json("""{"code":0,"data":{"list":[],"total":0}}""")));
+    Check((await empty.ListArtistAlbumsAsync("a", 1, 50, default)).Items.Count == 0);
+    using var malformed = new NasApiClient(endpoint, new FakeHandler(_ => Json("""{"code":0,"data":{"list":[{"guid":"a","name":"A"}],"total":0}}""")));
+    await Fails(MusicFailure.InvalidResponse, () => malformed.ListArtistAlbumsAsync("a", 1, 50, default));
+});
 await Test("late unauthorized responses cannot invalidate a replaced session", async () =>
 {
     foreach (bool businessError in new[] { false, true })

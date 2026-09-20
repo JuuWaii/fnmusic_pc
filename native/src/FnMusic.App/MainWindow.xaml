@@ -52,6 +52,7 @@
      <Button Content="歌手" Click="Artists_Click"/>
      <Button x:Name="CollectionBack" Content="返回列表" Click="CollectionBack_Click" Visibility="Collapsed"/>
      <Button x:Name="CollectionOpen" Content="查看详情" Click="CollectionOpen_Click" Visibility="Collapsed"/>
+     <Button x:Name="ArtistAlbums" Content="歌手专辑" Click="ArtistAlbums_Click" Visibility="Collapsed"/>
     </StackPanel>
     <TextBlock x:Name="CollectionHeading" TextWrapping="Wrap" Visibility="Collapsed"/>
     <Grid ColumnSpacing="8">

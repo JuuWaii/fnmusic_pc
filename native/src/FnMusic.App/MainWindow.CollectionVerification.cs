@@ -32,6 +32,19 @@ public sealed partial class MainWindow
                 await LoadPageAsync(2);
                 var tracks = (TrackList.ItemsSource as IEnumerable<MusicTrack> ?? throw new InvalidOperationException()).ToArray();
                 Verify(prefix + "_detail_last_page", tracks.Length == 3 && tracks[0].Id.EndsWith("-track-51") && !NextPage.IsEnabled && PreviousPage.IsEnabled);
+                if (kind == CollectionKind.Artist)
+                {
+                    await ShowArtistAlbumsAsync();
+                    Verify("artist_albums_list", parentArtist?.Id == "collection-51" && collectionKind == CollectionKind.Album && collection is null && page == 1 && total == 53);
+                    await LoadPageAsync(2);
+                    var album = ((IEnumerable<MusicCollection>)CollectionList.ItemsSource!).First();
+                    await OpenCollectionAsync(album);
+                    Verify("artist_album_detail", parentArtist is not null && collection?.Id == album.Id && TrackList.Visibility == Visibility.Visible);
+                    await ReturnToCollectionListAsync();
+                    Verify("artist_albums_return_page", parentArtist is not null && collection is null && page == 2);
+                    await ReturnToCollectionListAsync();
+                    Verify("artist_return_track_page", parentArtist is null && collectionKind == CollectionKind.Artist && collection?.Id == "collection-51" && page == 2);
+                }
                 await ReturnToCollectionListAsync();
                 Verify(prefix + "_return_page", page == 2 && CollectionList.Visibility == Visibility.Visible && CollectionOpen.IsEnabled);
                 await OpenCollectionAsync(items[1]);

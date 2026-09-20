@@ -106,7 +106,7 @@ public sealed partial class MainWindow
     }
     private async Task SearchAsync()
     {
-        collectionKind = null; collection = null; UpdateCollectionView();
+        parentArtist = null; collectionKind = null; collection = null; UpdateCollectionView();
         searchQuery = SearchInput.Text.Trim();
         await LoadPageAsync(1);
     }
@@ -123,6 +123,7 @@ public sealed partial class MainWindow
         string query = searchQuery;
         var kind = collectionKind;
         var selectedCollection = collection;
+        var artist = parentArtist;
         page = 1; total = 0;
         PreviousPage.IsEnabled = NextPage.IsEnabled = false;
         TrackList.ItemsSource = null;
@@ -145,7 +146,9 @@ public sealed partial class MainWindow
                 if (IsSyntheticPreview) collections = GetSyntheticCollections(kind.Value, Math.Max(1, requestedPage));
                 else
 #endif
-                collections = await api!.ListCollectionsAsync(kind.Value, Math.Max(1, requestedPage), 50, ct);
+                collections = artist is null
+                    ? await api!.ListCollectionsAsync(kind.Value, Math.Max(1, requestedPage), 50, ct)
+                    : await api!.ListArtistAlbumsAsync(artist.Id, Math.Max(1, requestedPage), 50, ct);
                 if (ct.IsCancellationRequested || closed) return;
                 page = Math.Max(1, requestedPage); total = collections.Total;
                 CollectionList.ItemsSource = collections.Items;
@@ -357,7 +360,7 @@ public sealed partial class MainWindow
         CancelWork(); music.Stop(); mediaReady = false;
         libraryWork.Cancel();
         searchQuery = ""; SearchInput.Text = "";
-        collectionKind = null; collection = null; collectionListPage = 1;
+        parentArtist = null; collectionKind = null; collection = null; collectionListPage = 1;
         CollectionList.ItemsSource = null; CollectionOpen.IsEnabled = false; UpdateCollectionView();
         TrackList.ItemsSource = null; NowPlaying.Text = PageStatus.Text = "";
         queue.Clear(); QueueStatus.Text = "播放队列为空";

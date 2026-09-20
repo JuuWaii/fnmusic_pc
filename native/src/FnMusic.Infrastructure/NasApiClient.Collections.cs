@@ -23,7 +23,17 @@ public sealed partial class NasApiClient
     {
         ValidatePage(page, size);
         using var data = await RequestAsync(HttpMethod.Get, $"{CollectionPath(kind)}/list?page={page}&size={size}", null, ct);
-        var root = data.RootElement;
+        return ParseCollectionPage(data.RootElement, size);
+    }
+    public async Task<CollectionPage> ListArtistAlbumsAsync(string artistId, int page, int size, CancellationToken ct)
+    {
+        ValidatePage(page, size);
+        using var data = await RequestAsync(HttpMethod.Get,
+            $"album/artist-detail/list?artistGUID={EncodeCollectionId(artistId)}&page={page}&size={size}", null, ct);
+        return ParseCollectionPage(data.RootElement, size);
+    }
+    private static CollectionPage ParseCollectionPage(JsonElement root, int size)
+    {
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("list", out var list) || list.ValueKind != JsonValueKind.Array ||
             !root.TryGetProperty("total", out var total) || total.ValueKind != JsonValueKind.Number || !total.TryGetInt32(out int count) || count < 0)
             throw new MusicApiException(MusicFailure.InvalidResponse);

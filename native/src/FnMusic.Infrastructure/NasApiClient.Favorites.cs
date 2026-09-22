@@ -12,6 +12,11 @@ public sealed partial class NasApiClient
         if (result.Tracks.Count > size || result.Tracks.Count > result.Total) throw new MusicApiException(MusicFailure.InvalidResponse);
         return new TrackPage(result.Tracks.Select(track => track with { IsFavorite = true }).ToArray(), result.Total);
     }
+    public Task SetFavoriteAsync(TrackReference reference, bool favorite, CancellationToken ct)
+    {
+        ValidateReference(reference);
+        return SetFavoriteAsync(reference.TrackId, favorite, ct);
+    }
     public async Task SetFavoriteAsync(string trackId, bool favorite, CancellationToken ct)
     {
         _ = EncodeCollectionId(trackId);

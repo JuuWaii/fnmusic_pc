@@ -13,6 +13,7 @@ public sealed class ConnectionSettingsStore(string directory)
         var settings = JsonSerializer.Deserialize<ConnectionSettings>(await File.ReadAllTextAsync(file, ct));
         if (settings is null || settings.DeviceId.Length != 32 || !settings.DeviceId.All(Uri.IsHexDigit)) throw new InvalidDataException();
         _ = ServerEndpoint.Parse(settings.ServerAddress);
+        if (settings.SourceAccountKey is not null && !MusicSourceRegistry.IsValidKey(settings.SourceAccountKey)) throw new InvalidDataException();
         return settings;
     }
     public async Task SaveAsync(ConnectionSettings settings, CancellationToken ct)

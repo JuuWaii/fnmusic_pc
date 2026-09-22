@@ -14,9 +14,11 @@ public sealed partial class NasApiClient : IDisposable
     private string? token;
     private readonly object sessionGate = new();
     private long sessionVersion;
-    public NasApiClient(ServerEndpoint endpoint, HttpMessageHandler? handler = null)
+    public Guid SourceInstanceId { get; }
+    public NasApiClient(ServerEndpoint endpoint, HttpMessageHandler? handler = null, Guid sourceInstanceId = default)
     {
         this.endpoint = endpoint;
+        SourceInstanceId = sourceInstanceId;
         http = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
         { Timeout = TimeSpan.FromSeconds(15) };
     }
@@ -70,7 +72,7 @@ public sealed partial class NasApiClient : IDisposable
         return result;
     }
 
-    private static TrackPage ParseTrackPage(JsonElement root)
+    private TrackPage ParseTrackPage(JsonElement root)
     {
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("list", out var list) || list.ValueKind != JsonValueKind.Array ||
             !root.TryGetProperty("total", out var total) || total.ValueKind != JsonValueKind.Number || !total.TryGetInt32(out int count) || count < 0)
@@ -86,7 +88,7 @@ public sealed partial class NasApiClient : IDisposable
             double duration = item.TryGetProperty("duration", out var d) && d.ValueKind == JsonValueKind.Number && d.TryGetDouble(out double ms) && double.IsFinite(ms) ? Math.Max(0, ms / 1000) : 0;
             bool cue = item.TryGetProperty("isCue", out var c) && c.ValueKind == JsonValueKind.True;
             tracks.Add(new MusicTrack(id.GetString()!, title, artist, duration, cue)
-            { IsFavorite = item.TryGetProperty("isFavorite", out var favorite) && favorite.ValueKind == JsonValueKind.True });
+            { SourceInstanceId = SourceInstanceId, IsFavorite = item.TryGetProperty("isFavorite", out var favorite) && favorite.ValueKind == JsonValueKind.True });
         }
         return new TrackPage(tracks, count);
     }
@@ -99,6 +101,16 @@ public sealed partial class NasApiClient : IDisposable
         var transport = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = TimeSpan.FromSeconds(15) };
         transport.DefaultRequestHeaders.Add("Cookie", "music-token=" + Uri.EscapeDataString(session.Token));
         return await HttpRangeStream.OpenAsync(transport, new Uri(endpoint.ApiUri, "track/stream?guid=" + Uri.EscapeDataString(id)), ct).ConfigureAwait(false);
+    }
+
+    public Task<HttpRangeStream> OpenTrackStreamAsync(TrackReference reference, CancellationToken ct)
+    {
+        ValidateReference(reference);
+        return OpenTrackStreamAsync(reference.TrackId, ct);
+    }
+    private void ValidateReference(TrackReference reference)
+    {
+        if (reference.SourceInstanceId != SourceInstanceId) throw new MusicApiException(MusicFailure.Rejected);
     }
 
     public async Task<bool> CheckConnectionAsync(CancellationToken ct)

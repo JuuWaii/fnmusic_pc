@@ -1,6 +1,9 @@
 namespace FnMusic.Core;
 
-public sealed record ConnectionSettings(string ServerAddress, string DeviceId, bool RememberSession);
+public sealed record ConnectionSettings(string ServerAddress, string DeviceId, bool RememberSession)
+{
+    public string? SourceAccountKey { get; init; }
+}
 public sealed record MusicUser(string Name);
 public sealed record MusicTrack(string Id, string Title, string Artist, double DurationSeconds, bool IsCue)
 {

@@ -257,6 +257,54 @@ await Test("invalid session data cannot inject request headers", () =>
 });
 if (args.Length < 1) throw new Exception("Provide a dedicated test data directory");
 string testDirectory = Path.Combine(Path.GetFullPath(args[0]), Guid.NewGuid().ToString("N"));
+await Test("source registry survives restart and separates accounts and servers without plaintext identifiers", async () =>
+{
+    string directory = Path.Combine(testDirectory, "sources");
+    string key = MusicSourceRegistry.AccountKey(endpoint, " sample-account ");
+    Check(key == MusicSourceRegistry.AccountKey(ServerEndpoint.Parse("https://nas.example.invalid"), "sample-account"));
+    var registry = new MusicSourceRegistry(directory);
+    Guid first = await registry.GetOrCreateAsync(key, default);
+    Check(first != Guid.Empty && await new MusicSourceRegistry(directory).GetOrCreateAsync(key, default) == first);
+    Check(await registry.GetOrCreateAsync(MusicSourceRegistry.AccountKey(endpoint, "another-account"), default) != first);
+    Check(await registry.GetOrCreateAsync(MusicSourceRegistry.AccountKey(ServerEndpoint.Parse("https://other.example.invalid"), "sample-account"), default) != first);
+    string contents = await File.ReadAllTextAsync(Path.Combine(directory, "sources.json"));
+    Check(!contents.Contains("sample-account") && !contents.Contains("example.invalid"));
+    var settingsStore = new ConnectionSettingsStore(directory);
+    await settingsStore.SaveAsync(new ConnectionSettings(endpoint.MusicUri.AbsoluteUri, Guid.NewGuid().ToString("N"), true) { SourceAccountKey = key }, default);
+    Check((await settingsStore.LoadAsync(default))?.SourceAccountKey == key);
+});
+await Test("source registry corruption and cancellation never replace existing identities", async () =>
+{
+    string directory = Path.Combine(testDirectory, "bad-sources");
+    Directory.CreateDirectory(directory);
+    string file = Path.Combine(directory, "sources.json");
+    string key = MusicSourceRegistry.AccountKey(endpoint, "account");
+    string corrupt = JsonSerializer.Serialize(new Dictionary<string, Guid> { [key] = Guid.Empty });
+    await File.WriteAllTextAsync(file, corrupt);
+    try { await new MusicSourceRegistry(directory).GetOrCreateAsync(key, default); throw new Exception("Corrupt registry accepted"); }
+    catch (InvalidDataException) { }
+    Check(await File.ReadAllTextAsync(file) == corrupt);
+    using var canceled = new CancellationTokenSource(); canceled.Cancel();
+    try { await new MusicSourceRegistry(directory).GetOrCreateAsync(key, canceled.Token); throw new Exception("Cancellation ignored"); }
+    catch (OperationCanceledException) { }
+    Check(await File.ReadAllTextAsync(file) == corrupt);
+});
+await Test("NAS assigns source identity across browsing routes and rejects foreign playback and favorites before transport", async () =>
+{
+    Guid source = Guid.NewGuid(); int calls = 0;
+    using var api = new NasApiClient(endpoint, new FakeHandler(_ =>
+    {
+        calls++;
+        return Json("""{"code":0,"data":{"total":1,"list":[{"guid":"shared"}]}}""");
+    }), source);
+    var pages = new[] { await api.ListTracksAsync(1, 50, default), await api.SearchTracksAsync("sample", 1, 50, default),
+        await api.ListFavoritesAsync(1, 50, default), await api.ListCollectionTracksAsync(CollectionKind.Album, "album", 1, 50, default) };
+    Check(pages.All(page => page.Tracks.Single().Reference == new TrackReference(source, "shared")));
+    var foreign = new TrackReference(Guid.NewGuid(), "shared");
+    await Fails(MusicFailure.Rejected, () => api.OpenTrackStreamAsync(foreign, default));
+    await Fails(MusicFailure.Rejected, () => api.SetFavoriteAsync(foreign, true, default));
+    Check(calls == 4);
+});
 await Test("first login can clear a session before its directory exists", async () =>
 {
     var vault = new DpapiSessionVault(Path.Combine(testDirectory, "not-created"));

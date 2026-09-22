@@ -9,6 +9,7 @@ namespace FnMusic.App.ViewModels;
 public sealed class ConnectionViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly ConnectionSettingsStore settingsStore;
+    private readonly MusicSourceRegistry sourceRegistry;
     private readonly ISessionVault vault;
     private readonly CancellationTokenSource lifetime = new();
     private ConnectionSettings? settings;
@@ -30,6 +31,7 @@ public sealed class ConnectionViewModel : INotifyPropertyChanged, IDisposable
     {
         string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FnMusic.Native");
         settingsStore = new ConnectionSettingsStore(data);
+        sourceRegistry = new MusicSourceRegistry(data);
         vault = new DpapiSessionVault(Path.Combine(data, "sessions"));
     }
     private void Changed([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -63,11 +65,13 @@ public sealed class ConnectionViewModel : INotifyPropertyChanged, IDisposable
         if (!RememberSession) return;
         var token = await vault.LoadAsync(endpoint.StorageKey, lifetime.Token);
         if (token is null) return;
+        if (settings.SourceAccountKey is null)
+        { Status = "音乐源身份已升级，请重新登录一次以关联当前账号。"; return; }
         client.RestoreSession(token);
         try
         {
             Account = (await client.GetCurrentUserAsync(lifetime.Token)).Name;
-            AuthenticatedClient = client;
+            await ActivateSourceAsync(token, settings.SourceAccountKey);
             Status = "已恢复登录，可以打开音乐资料库。";
         }
         catch (MusicApiException ex) when (ex.Failure == MusicFailure.Unauthorized)
@@ -80,7 +84,8 @@ public sealed class ConnectionViewModel : INotifyPropertyChanged, IDisposable
         if (endpoint is not null && next.StorageKey != endpoint.StorageKey)
             await vault.ClearAsync(endpoint.StorageKey, lifetime.Token);
         bool same = endpoint?.StorageKey == next.StorageKey;
-        var updated = new ConnectionSettings(next.MusicUri.AbsoluteUri, same && settings is not null ? settings.DeviceId : Guid.NewGuid().ToString("N"), RememberSession);
+        var updated = new ConnectionSettings(next.MusicUri.AbsoluteUri, same && settings is not null ? settings.DeviceId : Guid.NewGuid().ToString("N"), RememberSession)
+        { SourceAccountKey = same ? settings?.SourceAccountKey : null };
         await settingsStore.SaveAsync(updated, lifetime.Token);
         if (!RememberSession) await vault.ClearAsync(next.StorageKey, lifetime.Token);
         settings = updated; endpoint = next; client?.Dispose(); client = new NasApiClient(next);
@@ -93,18 +98,21 @@ public sealed class ConnectionViewModel : INotifyPropertyChanged, IDisposable
         { Status = "请先保存并连接服务器。"; return; }
         if (string.IsNullOrWhiteSpace(Username) || string.IsNullOrEmpty(password))
         { Status = "请输入账号和密码。"; return; }
+        string loginUsername = Username.Trim();
         // 先撤销旧的本地持久状态，失败登录不能恢复此前账户。
         SessionChanging?.Invoke(); AuthenticatedClient = null;
         await vault.ClearAsync(endpoint.StorageKey, lifetime.Token);
         Account = "尚未登录";
         try
         {
-            string token = await client.LoginAsync(Username, password, settings.DeviceId, lifetime.Token);
+            string token = await client.LoginAsync(loginUsername, password, settings.DeviceId, lifetime.Token);
             var user = await client.GetCurrentUserAsync(lifetime.Token);
-            if (RememberSession) await vault.SaveAsync(endpoint.StorageKey, token, lifetime.Token);
-            settings = settings with { RememberSession = RememberSession };
+            string accountKey = MusicSourceRegistry.AccountKey(endpoint, loginUsername);
+            settings = settings with { RememberSession = RememberSession, SourceAccountKey = accountKey };
             await settingsStore.SaveAsync(settings, lifetime.Token);
-            AuthenticatedClient = client;
+            // 先保存归属，再保存新令牌；中途退出不能把新账户会话关联到旧账户来源。
+            if (RememberSession) await vault.SaveAsync(endpoint.StorageKey, token, lifetime.Token);
+            await ActivateSourceAsync(token, accountKey);
             Account = user.Name; Status = "登录成功，可以打开音乐资料库。";
         }
         catch
@@ -114,6 +122,15 @@ public sealed class ConnectionViewModel : INotifyPropertyChanged, IDisposable
             throw;
         }
     });
+    private async Task ActivateSourceAsync(string token, string accountKey)
+    {
+        Guid sourceId = await sourceRegistry.GetOrCreateAsync(accountKey, lifetime.Token);
+        var scoped = new NasApiClient(endpoint!, sourceInstanceId: sourceId);
+        scoped.RestoreSession(token);
+        client?.Dispose();
+        client = scoped;
+        AuthenticatedClient = scoped;
+    }
     public Task LogoutAsync() => RunAsync(async () =>
     {
         if (endpoint is null || client is null) return;

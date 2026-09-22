@@ -85,7 +85,8 @@ public sealed partial class NasApiClient : IDisposable
                 ? string.Join(" / ", artists.EnumerateArray().Where(a => a.ValueKind == JsonValueKind.Object && a.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String).Select(a => a.GetProperty("name").GetString())) : "";
             double duration = item.TryGetProperty("duration", out var d) && d.ValueKind == JsonValueKind.Number && d.TryGetDouble(out double ms) && double.IsFinite(ms) ? Math.Max(0, ms / 1000) : 0;
             bool cue = item.TryGetProperty("isCue", out var c) && c.ValueKind == JsonValueKind.True;
-            tracks.Add(new MusicTrack(id.GetString()!, title, artist, duration, cue));
+            tracks.Add(new MusicTrack(id.GetString()!, title, artist, duration, cue)
+            { IsFavorite = item.TryGetProperty("isFavorite", out var favorite) && favorite.ValueKind == JsonValueKind.True });
         }
         return new TrackPage(tracks, count);
     }

@@ -15,6 +15,42 @@ async Task Fails(MusicFailure failure, Func<Task> run)
     catch (MusicApiException ex) { Check(ex.Failure == failure); }
 }
 var endpoint = ServerEndpoint.Parse("https://nas.example.invalid/music/");
+await Test("favorite list maps state and mutations use explicit scoped bodies", async () =>
+{
+    int calls = 0;
+    using var api = new NasApiClient(endpoint, new FakeHandler(request =>
+    {
+        calls++;
+        if (request.Method == HttpMethod.Get)
+        {
+            Check(request.RequestUri!.AbsolutePath.EndsWith("/favorite-track/list") && request.RequestUri.Query == "?page=2&size=1");
+            return Json("""{"code":0,"data":{"list":[{"guid":"a&b","title":"收藏曲目"}],"total":3}}""");
+        }
+        Check(request.Method == HttpMethod.Post);
+        Check(request.RequestUri!.AbsolutePath.EndsWith(calls == 2 ? "/favorite-track/create" : "/favorite-track/delete"));
+        using var body = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+        Check(body.RootElement.GetProperty("trackGUID").GetString() == "a&b" && body.RootElement.EnumerateObject().Count() == 1);
+        return Json("""{"code":0,"data":null}""");
+    }));
+    var page = await api.ListFavoritesAsync(2, 1, default);
+    Check(page.Total == 3 && page.Tracks.Single().IsFavorite);
+    await api.SetFavoriteAsync("a&b", true, default);
+    await api.SetFavoriteAsync("a&b", false, default);
+    try { await api.SetFavoriteAsync(" ", true, default); throw new Exception("Invalid ID accepted"); } catch (ArgumentException) { }
+    Check(calls == 3);
+});
+await Test("favorite failures are not reported as successful mutations", async () =>
+{
+    using var rejected = new NasApiClient(endpoint, new FakeHandler(_ => Json("""{"code":500}""")));
+    await Fails(MusicFailure.Rejected, () => rejected.SetFavoriteAsync("a", true, default));
+    using var unauthorized = new NasApiClient(endpoint, new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized)));
+    await Fails(MusicFailure.Unauthorized, () => unauthorized.SetFavoriteAsync("a", false, default));
+    using var invalid = new NasApiClient(endpoint, new FakeHandler(_ => Json("""{"code":0,"data":{"list":[{"guid":"a"}],"total":0}}""")));
+    await Fails(MusicFailure.InvalidResponse, () => invalid.ListFavoritesAsync(1, 1, default));
+    using var tracks = new NasApiClient(endpoint, new FakeHandler(_ => Json("""{"code":0,"data":{"list":[{"guid":"a","isFavorite":true},{"guid":"b","isFavorite":false}],"total":2}}""")));
+    var page = await tracks.ListTracksAsync(1, 50, default);
+    Check(page.Tracks[0].IsFavorite && !page.Tracks[1].IsFavorite);
+});
 await Test("artist albums use scoped encoded pagination and strict collection parsing", async () =>
 {
     int calls = 0;

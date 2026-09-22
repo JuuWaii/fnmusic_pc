@@ -17,6 +17,8 @@
 
 [原生工程说明](native/README.md) · [阶段进度](docs/PHASE_STATUS.md) · [开发清单](docs/NATIVE_BACKLOG.md) · [FFmpeg 播放层](docs/FFMPEG_PLAYBACK.md)
 
+多音乐源、音乐库分类、两类歌单、飞牛设置同步、主题及对外音乐/歌词信息接口的最新排期见 [产品路线图](docs/PRODUCT_ROADMAP.md)。收藏基础已接入，验证边界见 [收藏状态](docs/NATIVE_FAVORITES.md)。
+
 歌曲搜索与分页已通过真实 NAS 只读验收；回车、空结果、多页和迟到请求隔离已通过合成窗口验收，见 [搜索状态](docs/NATIVE_SEARCH.md)。专辑/歌手列表、基础详情和详情歌曲播放已接入，真实列表及详情歌曲分页接口验收通过，见 [专辑与歌手状态](docs/NATIVE_COLLECTIONS.md)。收藏和歌单、FN Connect、OAuth、桌面集成及发布验收仍待后续。
 
 ## Electron 归档

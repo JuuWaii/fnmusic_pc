@@ -7,6 +7,8 @@ public sealed partial class MainWindow
 {
 #if DEBUG
     private (MusicFailure Failure, int DelayMilliseconds)? syntheticLibraryFailure;
+    private static readonly HashSet<string> syntheticFavorites = [];
+    private MusicFailure? syntheticFavoriteFailure;
 #endif
     private bool IsSyntheticPreview =>
 #if DEBUG
@@ -35,7 +37,7 @@ public sealed partial class MainWindow
         music.Player.IsMuted = true; MuteToggle.IsChecked = true;
         await LoadDevicesAsync();
     }
-    private static async Task<TrackPage> GetSyntheticPageAsync(string query, int requestedPage)
+    private static async Task<TrackPage> GetSyntheticPageAsync(string query, int requestedPage, bool onlyFavorites = false)
     {
         var tracks = new List<MusicTrack>
         {
@@ -48,7 +50,8 @@ public sealed partial class MainWindow
             // 专用测试请求不响应取消，模拟已到达的旧响应，验证生产写回检查。
             if (query == "slow") { await Task.Delay(20000); query = "分页测试"; }
         }
-        var found = tracks.Where(t => t.Title.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var found = tracks.Where(t => t.Title.Contains(query, StringComparison.OrdinalIgnoreCase) && (!onlyFavorites || syntheticFavorites.Contains(t.Id)))
+            .Select(t => t with { IsFavorite = syntheticFavorites.Contains(t.Id) }).ToArray();
         return new TrackPage(found.Skip((requestedPage - 1) * 50).Take(50).ToArray(), found.Length);
     }
     private static CollectionPage GetSyntheticCollections(CollectionKind kind, int requestedPage)

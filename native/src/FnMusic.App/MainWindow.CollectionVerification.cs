@@ -77,6 +77,22 @@ public sealed partial class MainWindow
                     CollectionList.ItemsSource is null && TrackList.ItemsSource is null && !NextPage.IsEnabled &&
                     CollectionHeading.Visibility == Visibility.Collapsed && PlaybackStatus.Text.StartsWith("登录已失效"));
             }
+            syntheticFavorites.Clear();
+            await SwitchCollectionAsync(null);
+            Verify("favorite_initial", TrackList.SelectedItem is MusicTrack { IsFavorite: false } && FavoriteToggle.IsEnabled);
+            await ToggleFavoriteAsync();
+            Verify("favorite_added", TrackList.SelectedItem is MusicTrack { IsFavorite: true } && FavoriteToggle.Content.ToString() == "取消收藏");
+            await ShowFavoritesAsync();
+            Verify("favorite_list", total == 1 && TrackList.SelectedItem is MusicTrack { Id: "synthetic-a", IsFavorite: true });
+            var favoriteTrack = (MusicTrack)TrackList.SelectedItem;
+            queue.Replace([favoriteTrack], favoriteTrack.Id);
+            syntheticFavoriteFailure = MusicFailure.Unavailable;
+            await ToggleFavoriteAsync();
+            Verify("favorite_failed_removal", total == 1 && TrackList.SelectedItem is MusicTrack { IsFavorite: true } && FavoriteToggle.IsEnabled && FavoriteStatus.Text.StartsWith("未能确认"));
+            await ToggleFavoriteAsync();
+            Verify("favorite_removed", total == 0 && TrackList.SelectedItem is null && !FavoriteToggle.IsEnabled && queue.Count == 1);
+            await SwitchCollectionAsync(null);
+            Verify("favorite_state_reloaded", TrackList.SelectedItem is MusicTrack { IsFavorite: false });
             stage = "complete";
         }
         catch (Exception ex) { error = ex.GetType().Name; }

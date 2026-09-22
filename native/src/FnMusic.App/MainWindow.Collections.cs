@@ -26,6 +26,7 @@ public sealed partial class MainWindow
     }
     private async Task SwitchCollectionAsync(CollectionKind? kind)
     {
+        favoritesView = false;
         parentArtist = null;
         collectionKind = kind; collection = null; collectionListPage = 1;
         SearchInput.Text = searchQuery = "";

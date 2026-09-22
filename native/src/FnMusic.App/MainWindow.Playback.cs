@@ -106,6 +106,7 @@ public sealed partial class MainWindow
     }
     private async Task SearchAsync()
     {
+        favoritesView = false;
         parentArtist = null; collectionKind = null; collection = null; UpdateCollectionView();
         searchQuery = SearchInput.Text.Trim();
         await LoadPageAsync(1);
@@ -175,10 +176,10 @@ public sealed partial class MainWindow
             else
             {
 #if DEBUG
-            if (IsSyntheticPreview) result = await GetSyntheticPageAsync(query, Math.Max(1, requestedPage));
+            if (IsSyntheticPreview) result = await GetSyntheticPageAsync(query, Math.Max(1, requestedPage), favoritesView);
             else
 #endif
-            result = query.Length == 0
+            result = favoritesView ? await api!.ListFavoritesAsync(Math.Max(1, requestedPage), 50, ct) : query.Length == 0
                 ? await api!.ListTracksAsync(Math.Max(1, requestedPage), 50, ct)
                 : await api!.SearchTracksAsync(query, Math.Max(1, requestedPage), 50, ct);
             }
@@ -186,8 +187,9 @@ public sealed partial class MainWindow
             page = Math.Max(1, requestedPage); total = result.Total;
             TrackList.ItemsSource = result.Tracks;
             TrackList.SelectedIndex = result.Tracks.Count > 0 ? 0 : -1;
-            PageStatus.Text = $"{(kind is not null ? CollectionLabel : query.Length == 0 ? "曲库" : "搜索结果")} · 第 {page} 页，共 {total} 首";
+            PageStatus.Text = $"{(favoritesView ? "收藏" : kind is not null ? CollectionLabel : query.Length == 0 ? "曲库" : "搜索结果")} · 第 {page} 页，共 {total} 首";
             if (result.Tracks.Count == 0) PageStatus.Text = kind is not null ? "当前详情暂无曲目。" : query.Length == 0 ? "当前资料库暂无曲目。" : "没有找到匹配歌曲，可修改关键词重试。";
+            if (favoritesView && result.Tracks.Count == 0) PageStatus.Text = "暂无收藏歌曲。";
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         catch (MusicApiException error) when (error.Failure == MusicFailure.Unauthorized)
@@ -217,7 +219,7 @@ public sealed partial class MainWindow
     {
         if (track.IsCue) { PlaybackStatus.Text = "CUE 分轨播放将在转码适配阶段接入。"; return; }
         if (TrackList.ItemsSource is not IEnumerable<MusicTrack> tracks || !queue.Replace(tracks, track.Id)) return;
-        queueOrigin = collectionKind is not null ? $"{CollectionLabel}详情当前页" : searchQuery.Length == 0 ? "曲库当前页" : "搜索结果当前页";
+        queueOrigin = favoritesView ? "收藏当前页" : collectionKind is not null ? $"{CollectionLabel}详情当前页" : searchQuery.Length == 0 ? "曲库当前页" : "搜索结果当前页";
         await PlayTrackAsync(track);
     }
     private async void PreviousTrack_Click(object sender, RoutedEventArgs e)
@@ -357,6 +359,8 @@ public sealed partial class MainWindow
     private void CancelWork() { ResetSeek(); work.Cancel(); work.Dispose(); work = new(); }
     private void ResetLibrary()
     {
+        favoriteWork.Cancel(); favoriteWork.Dispose(); favoriteWork = new();
+        favoritesView = false; FavoriteStatus.Text = "";
         CancelWork(); music.Stop(); mediaReady = false;
         libraryWork.Cancel();
         searchQuery = ""; SearchInput.Text = "";
@@ -368,5 +372,5 @@ public sealed partial class MainWindow
         PlaybackStatus.Text = "登录后刷新曲库。";
     }
     private void ClosePlayback()
-    { closed = true; ResetSeek(); progressTimer?.Stop(); libraryWork.Cancel(); libraryWork.Dispose(); work.Cancel(); work.Dispose(); music.Dispose(); }
+    { closed = true; ResetSeek(); progressTimer?.Stop(); favoriteWork.Cancel(); favoriteWork.Dispose(); libraryWork.Cancel(); libraryWork.Dispose(); work.Cancel(); work.Dispose(); music.Dispose(); }
 }

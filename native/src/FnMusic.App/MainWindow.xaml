@@ -48,6 +48,7 @@
     <TextBlock Text="音乐资料库" Style="{ThemeResource TitleTextBlockStyle}" />
     <StackPanel Orientation="Horizontal" Spacing="8">
      <Button Content="歌曲" Click="Songs_Click"/>
+     <Button Content="收藏" Click="Favorites_Click"/>
      <Button Content="专辑" Click="Albums_Click"/>
      <Button Content="歌手" Click="Artists_Click"/>
      <Button x:Name="CollectionBack" Content="返回列表" Click="CollectionBack_Click" Visibility="Collapsed"/>
@@ -73,7 +74,7 @@
      <StackPanel Padding="8"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Summary}" FontSize="12"/></StackPanel>
     </DataTemplate></ListView.ItemTemplate>
    </ListView>
-   <ListView x:Name="TrackList" Grid.Row="1" SelectionMode="Single">
+   <ListView x:Name="TrackList" Grid.Row="1" SelectionMode="Single" SelectionChanged="TrackSelection_Changed">
     <ListView.ItemTemplate><DataTemplate>
      <Grid Padding="8" ColumnSpacing="16" Background="Transparent" DoubleTapped="Track_DoubleTapped">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
@@ -83,6 +84,10 @@
     </DataTemplate></ListView.ItemTemplate>
    </ListView>
    <StackPanel Grid.Row="2" Spacing="10">
+    <StackPanel Orientation="Horizontal" Spacing="8">
+     <Button x:Name="FavoriteToggle" Content="收藏歌曲" IsEnabled="False" Click="Favorite_Click"/>
+     <TextBlock x:Name="FavoriteStatus" VerticalAlignment="Center" TextWrapping="Wrap"/>
+    </StackPanel>
     <TextBlock x:Name="PlaybackStatus" Text="登录后刷新曲库。" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
     <TextBlock x:Name="NowPlaying" TextTrimming="CharacterEllipsis"/>
     <TextBlock x:Name="QueueStatus" Text="播放队列为空" FontSize="12"/>

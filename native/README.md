@@ -55,6 +55,8 @@ Debug 参数 `--verify-native-collections` 使用本应用已保存会话，对�
 
 Debug 窗口回归：`--preview-synthetic --preview-collections` 提供两页专辑/歌手、两页详情歌曲、空详情及 20 秒延迟详情。追加 `--verify-collection-window` 可执行窗口内状态断言，写入 `collection-window-verification.json` 并自动退出；不模拟鼠标，不访问 NAS。
 
+Debug 参数 `--verify-native-favorites` 只读核验当前账户收藏，写入脱敏 `favorite-verification.json` 后退出。数据不足时分页检查会标记跳过；不执行收藏增删。
+
 ## 工具链参考
 
 - [.NET 发布清单](https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json)

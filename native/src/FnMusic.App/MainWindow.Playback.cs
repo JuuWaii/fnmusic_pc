@@ -218,7 +218,7 @@ public sealed partial class MainWindow
     private async Task StartQueueAsync(MusicTrack track)
     {
         if (track.IsCue) { PlaybackStatus.Text = "CUE 分轨播放将在转码适配阶段接入。"; return; }
-        if (TrackList.ItemsSource is not IEnumerable<MusicTrack> tracks || !queue.Replace(tracks, track.Id)) return;
+        if (TrackList.ItemsSource is not IEnumerable<MusicTrack> tracks || !queue.Replace(tracks, track.Reference)) return;
         queueOrigin = favoritesView ? "收藏当前页" : collectionKind is not null ? $"{CollectionLabel}详情当前页" : searchQuery.Length == 0 ? "曲库当前页" : "搜索结果当前页";
         await PlayTrackAsync(track);
     }
@@ -268,8 +268,8 @@ public sealed partial class MainWindow
         remove.Click += (_, _) =>
         {
             if (list.SelectedItem is not MusicTrack selected) return;
-            if (queue.Current?.Id == selected.Id) Stop_Click(sender, e);
-            queue.Remove(selected.Id);
+            if (queue.Current?.Reference == selected.Reference) Stop_Click(sender, e);
+            queue.Remove(selected.Reference);
             list.ItemsSource = queue.Tracks; list.SelectedItem = queue.Current;
             clear.IsEnabled = queue.Count > 0;
             UpdateQueueStatus();
@@ -280,7 +280,7 @@ public sealed partial class MainWindow
             clear.IsEnabled = false;
             UpdateQueueStatus();
         };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary && list.SelectedItem is MusicTrack track && queue.Select(track.Id) is { } selectedTrack)
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary && list.SelectedItem is MusicTrack track && queue.Select(track.Reference) is { } selectedTrack)
             await PlayTrackAsync(selectedTrack);
     }
     private void Resume_Click(object sender, RoutedEventArgs e) { if (mediaReady) { music.Player.Play(); PlaybackStatus.Text = "正在播放"; } }

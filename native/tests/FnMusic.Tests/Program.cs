@@ -469,7 +469,7 @@ await Test("queue snapshot excludes unsupported tracks and survives source mutat
 {
     var source = new List<MusicTrack> { MakeTrack("a"), MakeTrack("cue", true), MakeTrack("b"), MakeTrack("a") };
     var queue = new PlaybackQueue();
-    Check(queue.Replace(source, "a") && queue.Count == 2);
+    Check(queue.Replace(source, MakeTrack("a").Reference) && queue.Count == 2);
     source.Clear();
     Check(queue.Next(true)?.Id == "b" && queue.Next(true) is null);
     Check(queue.Previous()?.Id == "a");
@@ -478,7 +478,7 @@ await Test("queue snapshot excludes unsupported tracks and survives source mutat
 await Test("queue distinguishes automatic repeat-one from manual next", () =>
 {
     var queue = new PlaybackQueue { Mode = QueueMode.RepeatOne };
-    queue.Replace(new[] { MakeTrack("a"), MakeTrack("b") }, "a");
+    queue.Replace(new[] { MakeTrack("a"), MakeTrack("b") }, MakeTrack("a").Reference);
     Check(queue.Next(true)?.Id == "a");
     Check(queue.Next(false)?.Id == "b" && queue.Next(false)?.Id == "a");
     queue.Mode = QueueMode.RepeatAll;
@@ -488,7 +488,7 @@ await Test("queue distinguishes automatic repeat-one from manual next", () =>
 await Test("shuffle avoids immediate repeats and previous restores playback history", () =>
 {
     var queue = new PlaybackQueue(new Random(42)) { Mode = QueueMode.Shuffle };
-    queue.Replace(new[] { MakeTrack("a"), MakeTrack("b"), MakeTrack("c") }, "a");
+    queue.Replace(new[] { MakeTrack("a"), MakeTrack("b"), MakeTrack("c") }, MakeTrack("a").Reference);
     for (int i = 0; i < 20; i++)
     {
         string before = queue.Current!.Id;
@@ -500,31 +500,56 @@ await Test("shuffle avoids immediate repeats and previous restores playback hist
 await Test("queue clear prevents cross-account continuation", () =>
 {
     var queue = new PlaybackQueue();
-    queue.Replace(new[] { MakeTrack("a") }, "a"); queue.Clear();
+    queue.Replace(new[] { MakeTrack("a") }, MakeTrack("a").Reference); queue.Clear();
     Check(queue.Current is null && queue.Count == 0 && queue.Next(true) is null && queue.Previous() is null);
     return Task.CompletedTask;
 });
 await Test("queue removal preserves identity and discards stale shuffle history", () =>
 {
     var queue = new PlaybackQueue(new Random(42)) { Mode = QueueMode.Shuffle };
-    queue.Replace(new[] { MakeTrack("a"), MakeTrack("b"), MakeTrack("c") }, "b");
-    Check(queue.Select("c")?.Id == "c");
-    Check(queue.Remove("a") && queue.Current?.Id == "c" && queue.Index == 1);
+    queue.Replace(new[] { MakeTrack("a"), MakeTrack("b"), MakeTrack("c") }, MakeTrack("b").Reference);
+    Check(queue.Select(MakeTrack("c").Reference)?.Id == "c");
+    Check(queue.Remove(MakeTrack("a").Reference) && queue.Current?.Id == "c" && queue.Index == 1);
     Check(queue.Previous()?.Id == "b");
-    Check(!queue.Remove("missing") && queue.Count == 2);
-    Check(queue.Select("missing") is null && queue.Current?.Id == "b");
-    Check(queue.Remove("b") && queue.Current is null && queue.Next(true) is null);
-    Check(queue.Select("c")?.Id == "c");
-    Check(queue.Remove("c") && queue.Count == 0 && queue.Previous() is null);
+    Check(!queue.Remove(MakeTrack("missing").Reference) && queue.Count == 2);
+    Check(queue.Select(MakeTrack("missing").Reference) is null && queue.Current?.Id == "b");
+    Check(queue.Remove(MakeTrack("b").Reference) && queue.Current is null && queue.Next(true) is null);
+    Check(queue.Select(MakeTrack("c").Reference)?.Id == "c");
+    Check(queue.Remove(MakeTrack("c").Reference) && queue.Count == 0 && queue.Previous() is null);
     return Task.CompletedTask;
 });
 await Test("invalid queue replacement preserves the active snapshot", () =>
 {
     var queue = new PlaybackQueue();
-    queue.Replace(new[] { MakeTrack("a") }, "a");
-    Check(!queue.Replace(new[] { MakeTrack("cue", true) }, "cue") && queue.Current?.Id == "a");
+    queue.Replace(new[] { MakeTrack("a") }, MakeTrack("a").Reference);
+    Check(!queue.Replace(new[] { MakeTrack("cue", true) }, MakeTrack("cue").Reference) && queue.Current?.Id == "a");
     queue.Mode = QueueMode.Shuffle;
     Check(queue.Next(true) is null);
+    return Task.CompletedTask;
+});
+await Test("queue keeps same provider IDs from separate sources and removes only the selected reference", () =>
+{
+    var first = MakeTrack("shared") with { SourceInstanceId = Guid.NewGuid() };
+    var second = first with { SourceInstanceId = Guid.NewGuid() };
+    var queue = new PlaybackQueue();
+    Check(queue.Replace([first, second, first with { Title = "renamed" }], second.Reference));
+    Check(queue.Count == 2 && queue.Current?.Reference == second.Reference);
+    Check(queue.Select(first.Reference)?.Reference == first.Reference);
+    Check(queue.Previous()?.Reference == second.Reference);
+    Check(queue.Remove(first.Reference) && queue.Count == 1 && queue.Current?.Reference == second.Reference);
+    Check(!queue.Remove(first.Reference) && queue.Select(first.Reference) is null);
+    Check(queue.Remove(second.Reference) && queue.Current is null);
+    return Task.CompletedTask;
+});
+await Test("queue rejects a foreign source reference without replacing the snapshot", () =>
+{
+    var first = MakeTrack("shared") with { SourceInstanceId = Guid.NewGuid() };
+    var foreign = first with { SourceInstanceId = Guid.NewGuid() };
+    var queue = new PlaybackQueue();
+    Check(queue.Replace([first], first.Reference));
+    Check(!queue.Replace([foreign], first.Reference) && queue.Current?.Reference == first.Reference);
+    Check(queue.Select(foreign.Reference) is null && !queue.Remove(foreign.Reference));
+    Check(queue.Current?.Reference == first.Reference && queue.Count == 1);
     return Task.CompletedTask;
 });
 Console.WriteLine($"Native checks: {passed} passed.");

@@ -65,7 +65,7 @@ public sealed partial class MainWindow
                 await LoadPageAsync(1);
                 Verify(prefix + "_network_retry", total == 53 && CollectionOpen.IsEnabled && NextPage.IsEnabled);
                 var queuedTrack = new MusicTrack("synthetic-queued", "合成曲目", "测试夹具", 60, false);
-                queue.Replace([queuedTrack], queuedTrack.Id);
+                queue.Replace([queuedTrack], queuedTrack.Reference);
                 syntheticLibraryFailure = (MusicFailure.Unauthorized, 100);
                 var staleFailure = LoadPageAsync(1);
                 await SwitchCollectionAsync(kind);
@@ -85,7 +85,7 @@ public sealed partial class MainWindow
             await ShowFavoritesAsync();
             Verify("favorite_list", total == 1 && TrackList.SelectedItem is MusicTrack { Id: "synthetic-a", IsFavorite: true });
             var favoriteTrack = (MusicTrack)TrackList.SelectedItem;
-            queue.Replace([favoriteTrack], favoriteTrack.Id);
+            queue.Replace([favoriteTrack], favoriteTrack.Reference);
             syntheticFavoriteFailure = MusicFailure.Unavailable;
             await ToggleFavoriteAsync();
             Verify("favorite_failed_removal", total == 1 && TrackList.SelectedItem is MusicTrack { IsFavorite: true } && FavoriteToggle.IsEnabled && FavoriteStatus.Text.StartsWith("未能确认"));

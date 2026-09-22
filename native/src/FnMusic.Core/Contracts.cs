@@ -4,6 +4,8 @@ public sealed record ConnectionSettings(string ServerAddress, string DeviceId, b
 public sealed record MusicUser(string Name);
 public sealed record MusicTrack(string Id, string Title, string Artist, double DurationSeconds, bool IsCue)
 {
+    public Guid SourceInstanceId { get; init; }
+    public TrackReference Reference => new(SourceInstanceId, Id);
     public bool IsFavorite { get; init; }
     public string DisplayDuration => TimeSpan.FromSeconds(Math.Clamp(DurationSeconds, 0, 864000)).ToString(DurationSeconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss");
 }

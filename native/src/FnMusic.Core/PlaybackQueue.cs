@@ -14,11 +14,11 @@ public sealed class PlaybackQueue(Random? random = null)
     public IReadOnlyList<MusicTrack> Tracks => Array.AsReadOnly(tracks);
     public MusicTrack? Current => Index >= 0 && Index < tracks.Length ? tracks[Index] : null;
 
-    public bool Replace(IEnumerable<MusicTrack> source, string selectedId)
+    public bool Replace(IEnumerable<MusicTrack> source, TrackReference selectedReference)
     {
         // 未支持的 CUE 不进入自动续播，避免在曲间意外停住。
-        var next = source.Where(t => !t.IsCue).DistinctBy(t => t.Id).ToArray();
-        int selected = Array.FindIndex(next, t => t.Id == selectedId);
+        var next = source.Where(t => !t.IsCue).DistinctBy(t => t.Reference).ToArray();
+        int selected = Array.FindIndex(next, t => t.Reference == selectedReference);
         if (selected < 0) return false;
         tracks = next; Index = selected; history.Clear();
         return true;
@@ -55,20 +55,20 @@ public sealed class PlaybackQueue(Random? random = null)
         else return null;
         return Current;
     }
-    public MusicTrack? Select(string id)
+    public MusicTrack? Select(TrackReference reference)
     {
-        int selected = Array.FindIndex(tracks, t => t.Id == id);
+        int selected = Array.FindIndex(tracks, t => t.Reference == reference);
         if (selected < 0) return null;
         if (Index >= 0 && Index != selected) history.Push(Index);
         Index = selected;
         return Current;
     }
     // 当前曲目由窗口负责停止；删除其他曲目保持当前曲目身份。
-    public bool Remove(string id)
+    public bool Remove(TrackReference reference)
     {
-        int removed = Array.FindIndex(tracks, t => t.Id == id);
+        int removed = Array.FindIndex(tracks, t => t.Reference == reference);
         if (removed < 0) return false;
-        tracks = tracks.Where(t => t.Id != id).ToArray();
+        tracks = tracks.Where(t => t.Reference != reference).ToArray();
         if (removed == Index) Index = -1;
         else if (removed < Index) Index--;
         history.Clear(); // 索引已变化，旧随机播放历史不再有效。
